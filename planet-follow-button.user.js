@@ -6,8 +6,8 @@
 // @author       joejoejoe
 // @homepage     https://github.com/HelloWorldImJoe/TampermonkeyScripts
 // @supportURL   https://github.com/HelloWorldImJoe/TampermonkeyScripts/issues
-// @match        https://www.v2ex.com/planet
-// @match        https://v2ex.com/planet
+// @match        https://www.v2ex.com/planet?p=*
+// @match        https://v2ex.com/planet?p=*
 // @icon         https://www.v2ex.com/static/favicon.ico
 // @grant        GM_setValue
 // @grant        GM_getValue
