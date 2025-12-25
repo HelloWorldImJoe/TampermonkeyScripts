@@ -226,6 +226,40 @@
             background: #2d3748;
         }
 
+        .tip-postscript-container {
+            margin-bottom: 20px;
+        }
+
+        .tip-postscript-label {
+            color: #9ca3af;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .tip-postscript-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            background: #232936;
+            color: #d1d5db;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 60px;
+            box-sizing: border-box;
+        }
+
+        .tip-postscript-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #1a1f2e;
+        }
+
+        .tip-postscript-input::placeholder {
+            color: #6b7280;
+        }
+
         .tip-actions {
             display: flex;
             gap: 10px;
@@ -401,6 +435,10 @@
                             <label for="amount-500" class="tip-amount-label-radio">500</label>
                         </div>
                     </div>
+                    <div class="tip-postscript-container">
+                        <label class="tip-postscript-label">附言（将作为回复发送）</label>
+                        <textarea class="tip-postscript-input" id="tip-postscript" placeholder="感谢您的精彩回答"></textarea>
+                    </div>
                     <div class="tip-actions">
                         <button class="tip-button-action tip-button-cancel" id="tip-cancel">取消</button>
                         <button class="tip-button-action tip-button-confirm" id="tip-confirm">发送</button>
@@ -459,6 +497,12 @@
         const messageEl = document.getElementById('tip-message');
         messageEl.className = 'tip-message';
         messageEl.textContent = '';
+
+        // 重置附言输入框
+        const postscriptEl = document.getElementById('tip-postscript');
+        if (postscriptEl) {
+            postscriptEl.value = '';
+        }
 
         // 重置token选择
         document.querySelectorAll('.tip-modal-tab').forEach(t => t.classList.remove('active'));
@@ -544,14 +588,31 @@
             // 提交到V2EX
             await submitTransactionToV2EX(signature);
 
-            showMessage('打赏成功！', 'success');
+            showMessage('打赏成功！正在提交回复...', 'success');
+            
+            // 获取附言内容
+            const postscriptEl = document.getElementById('tip-postscript');
+            const postscript = postscriptEl ? postscriptEl.value.trim() : '';
+            
+            // 提交回复到帖子
+            try {
+                const replySubmitted = await submitReplyToTopic(username, postscript);
+                if (replySubmitted) {
+                    showMessage('打赏成功！回复已提交', 'success');
+                } else {
+                    showMessage('打赏成功！但回复提交失败，请手动回复', 'success');
+                }
+            } catch (replyError) {
+                console.error('提交回复失败:', replyError);
+                showMessage('打赏成功！但回复提交失败，请手动回复', 'success');
+            }
             
             setTimeout(() => {
                 // 新开标签查看交易
                 const txUrl = `https://www.v2ex.com/solana/tips`;
                 window.open(txUrl, '_blank');
                 closeTipModal();
-            }, 500);
+            }, 1500);
 
         } catch (error) {
             console.error('打赏失败:', error);
@@ -675,6 +736,45 @@
         }
 
         return response;
+    }
+
+    // 提交回复到帖子
+    async function submitReplyToTopic(username, postscript) {
+        // 获取回复框
+        const replyBox = document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
+        if (!replyBox) {
+            console.warn('未找到回复框，跳过自动回复');
+            return false;
+        }
+
+        // 构造回复内容
+        const replyContent = `@${username} ${postscript || '感谢您的精彩回答'}`;
+        
+        // 填充回复框
+        replyBox.value = replyContent;
+        replyBox.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // 等待一小段时间确保内容已填充
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // 查找并点击提交按钮
+        const submitBtn = document.querySelector('input[type="submit"][value="回复"]') || 
+                         document.querySelector('button[type="submit"]') || 
+                         document.querySelector('input[type="submit"]');
+        
+        if (submitBtn) {
+            submitBtn.click();
+            return true;
+        } else {
+            // 尝试提交表单
+            const form = replyBox.closest('form');
+            if (form) {
+                form.submit();
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // 为回复添加打赏按钮
