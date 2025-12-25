@@ -654,7 +654,7 @@
             
             setTimeout(() => {
                 // 新开标签查看交易
-                const txUrl = `https://www.v2ex.com/solana/tips`;
+                const txUrl = `${window.location.origin}/solana/tips`;
                 window.open(txUrl, '_blank');
                 closeTipModal();
             }, 1500);
