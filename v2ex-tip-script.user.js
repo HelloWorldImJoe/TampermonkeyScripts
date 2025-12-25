@@ -604,7 +604,7 @@
             
             // 提交回复到帖子
             try {
-                const replySubmitted = await submitReplyToTopic(username, postscript);
+                const replySubmitted = await submitReplyToTopic(username, postscript, amount);
                 if (replySubmitted) {
                     showMessage('打赏成功！回复已提交', 'success');
                 } else {
@@ -747,7 +747,7 @@
     }
 
     // 提交回复到帖子
-    async function submitReplyToTopic(username, postscript) {
+    async function submitReplyToTopic(username, postscript, amount) {
         // 获取回复框
         const replyBox = document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
         if (!replyBox) {
@@ -756,7 +756,8 @@
         }
 
         // 构造回复内容
-        const replyContent = `@${username} ${postscript || '感谢您的精彩回答'}`;
+        const amountLabel = amount ? `$${amount}` : '$?';
+        const replyContent = `@${username} [${amountLabel}] ${postscript || '感谢您的精彩回答'}`;
         
         // 填充回复框
         replyBox.value = replyContent;
