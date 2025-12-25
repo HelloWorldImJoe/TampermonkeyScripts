@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.0.0
 // @description  为V2EX主题回复添加打赏功能，支持使用$V2EX和Solana打赏
-// @author       You
+// @author       JoeJoeJoe
 // @match        https://www.v2ex.com/t/*
 // @match        https://*.v2ex.com/t/*
 // @icon         https://www.v2ex.com/static/icon-192.png

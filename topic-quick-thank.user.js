@@ -3,7 +3,7 @@
 // @namespace    https://github.com/HelloWorldImJoe/TampermonkeyScripts
 // @version      0.1.0
 // @description  在 V2EX 话题页面快速感谢打赏过你的用户：一键填充回复框并可自动提交（可选）。支持本地 `target/topic.html` 测试页面。
-// @author       
+// @author       JoeJoeJoe
 // @match        https://www.v2ex.com/t/*
 // @match        https://v2ex.com/t/*
 // @include      http://*/*target/*

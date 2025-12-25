@@ -3,7 +3,7 @@
 // @namespace    https://github.com/tampermonkey/tampermonkey
 // @version      1.0.0
 // @description  为V2EX Planet页面的博客添加关注按钮，支持一键添加到Planet应用中进行阅读和管理
-// @author       joejoejoe
+// @author       JoeJoeJoe
 // @homepage     https://github.com/HelloWorldImJoe/TampermonkeyScripts
 // @supportURL   https://github.com/HelloWorldImJoe/TampermonkeyScripts/issues
 // @match        https://www.v2ex.com/planet
