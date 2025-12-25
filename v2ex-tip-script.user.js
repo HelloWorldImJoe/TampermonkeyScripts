@@ -409,11 +409,10 @@
         if (addressCache.has(username)) {
             return addressCache.get(username);
         }
-
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
-                url: `https://www.v2ex.com/member/${username}`,
+                url: `${window.location.origin}/member/${username}`,
                 onload: function(response) {
                     if (response.status === 200) {
                         // 解析HTML查找address变量
@@ -770,7 +769,7 @@
         const formData = new URLSearchParams();
         formData.append('tx', signature);
 
-        const response = await fetch('https://www.v2ex.com/solana/tx', {
+        const response = await fetch(`${window.location.origin}/solana/tx`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
