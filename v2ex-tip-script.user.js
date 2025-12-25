@@ -600,7 +600,12 @@
 
             // 连接钱包（已连接则跳过授权弹窗）
             if (!window.solana.isConnected) {
-                await window.solana.connect();
+                try {
+                    await window.solana.connect();
+                } catch (connErr) {
+                    const reason = connErr?.message || connErr?.code || 'Phantom 连接被拒绝';
+                    throw new Error(`Phantom 连接失败：${reason}`);
+                }
             }
             const fromAddress = window.solana.publicKey?.toString();
             if (!fromAddress) {
