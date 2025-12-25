@@ -10,6 +10,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @connect      www.v2ex.com
+// @connect      jillian-fnk7b6-fast-mainnet.helius-rpc.com
 // ==/UserScript==
 
 (function() {
@@ -339,6 +340,42 @@
     // 用户地址缓存
     const addressCache = new Map();
 
+    // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
+    function gmFetch(url, options = {}) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                url,
+                method: options.method || 'GET',
+                headers: options.headers,
+                data: options.body,
+                timeout: options.timeout || 15000,
+                responseType: options.responseType || 'text',
+                onload: (resp) => {
+                    const headers = new Headers();
+                    if (resp.responseHeaders) {
+                        resp.responseHeaders.trim().split(/\r?\n/).forEach(line => {
+                            const idx = line.indexOf(':');
+                            if (idx > -1) {
+                                const key = line.slice(0, idx).trim();
+                                const value = line.slice(idx + 1).trim();
+                                headers.append(key, value);
+                            }
+                        });
+                    }
+
+                    const body = options.responseType === 'arraybuffer' ? resp.response : resp.responseText;
+                    resolve(new Response(body, {
+                        status: resp.status,
+                        statusText: resp.statusText,
+                        headers
+                    }));
+                },
+                onerror: () => reject(new Error('Failed to fetch')),
+                ontimeout: () => reject(new Error('Request timed out'))
+            });
+        });
+    }
+
     // 动态加载依赖脚本
     function loadScriptOnce(src, checkFn) {
         return new Promise((resolve, reject) => {
@@ -632,7 +669,10 @@
 
     // 构建Solana交易
     async function buildTransaction(from, to, amount, mint) {
-        const connection = new solanaWeb3.Connection(SOLANA_RPC);
+        const connection = new solanaWeb3.Connection(SOLANA_RPC, {
+            commitment: 'confirmed',
+            fetch: gmFetch
+        });
         const fromPubkey = new solanaWeb3.PublicKey(from);
         const toPubkey = new solanaWeb3.PublicKey(to);
         
@@ -701,7 +741,7 @@
                 }
                 
                 try {
-                    const response = await fetch(`${SOLANA_RPC}`, {
+                    const response = await gmFetch(`${SOLANA_RPC}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
