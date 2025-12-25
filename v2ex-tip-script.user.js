@@ -521,7 +521,7 @@
     }
 
     // 显示打赏弹窗
-    async function showTipModal(username, address) {
+    async function showTipModal(username, address, floorNumber) {
         let modal = document.getElementById('tip-modal-overlay');
         if (!modal) {
             modal = createTipModal();
@@ -554,7 +554,7 @@
         confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
         newConfirmBtn.addEventListener('click', async function() {
-            await handleTipConfirm(username, address);
+            await handleTipConfirm(username, address, floorNumber);
         });
 
         modal.style.display = 'flex';
@@ -576,7 +576,7 @@
     }
 
     // 处理打赏确认
-    async function handleTipConfirm(username, address) {
+    async function handleTipConfirm(username, address, floorNumber) {
         const confirmBtn = document.getElementById('tip-confirm');
         const selectedAmount = document.querySelector('input[name="amount"]:checked');
         const selectedToken = document.querySelector('.tip-modal-tab.active').dataset.token;
@@ -645,7 +645,7 @@
             
             // 提交回复到帖子
             try {
-                const replySubmitted = await submitReplyToTopic(username, postscript, amount);
+                const replySubmitted = await submitReplyToTopic(username, postscript, amount, floorNumber);
                 if (replySubmitted) {
                     showMessage('打赏成功！回复已提交', 'success');
                 } else {
@@ -791,7 +791,7 @@
     }
 
     // 提交回复到帖子
-    async function submitReplyToTopic(username, postscript, amount) {
+    async function submitReplyToTopic(username, postscript, amount, floor) {
         // 获取回复框
         const replyBox = document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
         if (!replyBox) {
@@ -801,7 +801,8 @@
 
         // 构造回复内容
         const amountLabel = amount ? `${amount} $v2ex` : '? $v2ex';
-        const replyContent = `@${username} [${amountLabel}] ${postscript || '感谢您的精彩回答'}`;
+        const floorLabel = floor ? `#${floor}` : '';
+        const replyContent = `@${username} ${floorLabel} [${amountLabel}] ${postscript || '感谢您的精彩回答'}`;
         
         // 填充回复框
         replyBox.value = replyContent;
@@ -842,6 +843,8 @@
             const userLink = reply.querySelector('.dark');
             if (!userLink) return;
             const username = userLink.textContent.trim();
+            const floorEl = reply.querySelector('.no');
+            const floorNumber = floorEl ? floorEl.textContent.trim().replace('#', '') : null;
             
             const replyActions = reply.querySelector('.fr');
             if (!replyActions) return;
@@ -870,7 +873,7 @@
                         return;
                     }
 
-                    await showTipModal(username, address);
+                    await showTipModal(username, address, floorNumber);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
