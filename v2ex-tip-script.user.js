@@ -796,7 +796,7 @@
         }
 
         // 构造回复内容
-        const amountLabel = amount ? `$${amount}` : '$?';
+        const amountLabel = amount ? `${amount} $v2ex` : '? $v2ex';
         const replyContent = `@${username} [${amountLabel}] ${postscript || '感谢您的精彩回答'}`;
         
         // 填充回复框
