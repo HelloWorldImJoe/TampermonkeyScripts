@@ -7,6 +7,11 @@
 	- 适用页面：[https://www.v2ex.com/planet](https://www.v2ex.com/planet)， [https://v2ex.com/planet](https://v2ex.com/planet)
 	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/planet-follow-button.user.js)
 
+- **V2EX 回复打赏功能**：为 V2EX 主题回复添加打赏功能，支持使用 $V2EX 和 Solana 打赏。
+	- 适用页面：`https://www.v2ex.com/t/*`，`https://*.v2ex.com/t/*`
+	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/v2ex-tip-script.user.js)
+	- 本仓库文件：`v2ex-tip-script.user.js`
+
 - **V2EX 快速感谢打赏者**：在 V2EX 话题页面快速感谢打赏过你的用户，一键填充回复框并可选择自动提交。
 	- 适用页面：`https://www.v2ex.com/t/*`，本地测试页面：`target/topic.html`（file 协议）
 	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/topic-quick-thank.user.js)
