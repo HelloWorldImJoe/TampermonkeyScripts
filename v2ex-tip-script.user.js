@@ -485,11 +485,14 @@
     }
 
     // 显示打赏弹窗
-    function showTipModal(username, address) {
+    async function showTipModal(username, address) {
         let modal = document.getElementById('tip-modal-overlay');
         if (!modal) {
             modal = createTipModal();
         }
+
+        // 尝试静默连接，已授权用户避免重复弹窗
+        await ensurePhantomConnected();
 
         document.getElementById('tip-username').textContent = username;
         
@@ -559,9 +562,14 @@
                 throw new Error('请先安装 Phantom 钱包');
             }
 
-            // 连接钱包
-            const resp = await window.solana.connect();
-            const fromAddress = resp.publicKey.toString();
+            // 连接钱包（已连接则跳过授权弹窗）
+            if (!window.solana.isConnected) {
+                await window.solana.connect();
+            }
+            const fromAddress = window.solana.publicKey?.toString();
+            if (!fromAddress) {
+                throw new Error('未获取到钱包地址');
+            }
 
             // 根据选择的token确定mint地址
             let mintAddress;
@@ -817,7 +825,7 @@
                         return;
                     }
 
-                    showTipModal(username, address);
+                    await showTipModal(username, address);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
@@ -858,6 +866,19 @@
                 }, 500);
             }
         });
+    }
+
+    // 尝试静默连接 Phantom，若已授权则避免重复弹窗
+    async function ensurePhantomConnected() {
+        if (!window.solana || !window.solana.isPhantom) return false;
+        if (window.solana.isConnected) return true;
+        try {
+            await window.solana.connect({ onlyIfTrusted: true });
+            return window.solana.isConnected;
+        } catch (e) {
+            // 未授权时会拒绝，保持静默
+            return false;
+        }
     }
 
     // 初始化
