@@ -929,8 +929,7 @@
             const userLink = comment.querySelector('.planet-comment-header a[href^="/member/"]');
             if (!userLink) return;
             const username = userLink.textContent.trim();
-            const commentId = comment.getAttribute('id');
-            const floorNumber = commentId ? commentId.replace('comment-', '') : null;
+            const floorNumber = null; // Planet 评论不需要显示楼号
 
             const tipButton = document.createElement('a');
             const defaultLabel = '赏';
