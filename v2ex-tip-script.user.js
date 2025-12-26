@@ -18,11 +18,23 @@
 
     // 添加样式
     GM_addStyle(`
+        :root {
+            --tip-button-color: #374151;
+            --tip-button-hover-bg: rgba(59, 130, 246, 0.12);
+            --tip-button-hover-border: #3b82f6;
+        }
+
+        .Night {
+            --tip-button-color: #9aa0ae;
+            --tip-button-hover-bg: rgba(59, 130, 246, 0.08);
+        }
+
         .tip-button {
             cursor: pointer;
-            color: #9aa0ae;
+            color: var(--tip-button-color);
             margin-left: 0px;
             font-size: 12px;
+            font-weight: 600;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
@@ -49,9 +61,9 @@
         }
 
         .tip-button:hover {
-            color: #fff;
-            background: rgba(59, 130, 246, 0.08);
-            border-color: #3b82f6;
+            color: var(--tip-button-color);
+            background: var(--tip-button-hover-bg);
+            border-color: var(--tip-button-hover-border);
         }
 
         .tip-button.loading {
