@@ -6,6 +6,8 @@
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/t/*
 // @match        https://*.v2ex.com/t/*
+// @match        https://www.v2ex.com/planet/*
+// @match        https://*.v2ex.com/planet/*
 // @icon         https://www.v2ex.com/static/icon-192.png
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -58,6 +60,14 @@
             width: 12px;
             height: 12px;
             display: block;
+        }
+
+        .planet-tip-button {
+            width: auto;
+            height: auto;
+            padding: 2px 8px;
+            line-height: 1.2;
+            font-size: 12px;
         }
 
         .tip-button:hover {
@@ -455,8 +465,7 @@
         modal.innerHTML = `
             <div class="tip-modal-content">
                 <div class="tip-modal-tabs">
-                    <div class="tip-modal-tab active" data-token="v2ex">$V2EX</div>
-                    <div class="tip-modal-tab" data-token="solana">Solana</div>
+                    <div class="tip-modal-tab active" data-token="v2ex">使用$V2EX打赏</div>
                 </div>
                 <div class="tip-modal-inner">
                     <div class="tip-modal-title">
@@ -805,7 +814,10 @@
     // 提交回复到帖子
     async function submitReplyToTopic(username, postscript, amount, floor) {
         // 获取回复框
-        const replyBox = document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
+        const replyBox = document.getElementById('reply_content') ||
+                         document.querySelector('textarea[name="content"]') ||
+                         document.getElementById('planet-post-comment-input') ||
+                         document.querySelector('textarea[name="comment"]');
         if (!replyBox) {
             console.warn('未找到回复框，跳过自动回复');
             return false;
@@ -824,9 +836,11 @@
         await new Promise(resolve => setTimeout(resolve, 300));
 
         // 查找并点击提交按钮
-        const submitBtn = document.querySelector('input[type="submit"][value="回复"]') || 
-                         document.querySelector('button[type="submit"]') || 
-                         document.querySelector('input[type="submit"]');
+        const submitBtn = document.getElementById('planet-post-comment-submit') ||
+                 document.querySelector('input[type="submit"][value="回复"]') || 
+                 document.querySelector('button[type="submit"]') || 
+                 document.querySelector('input[type="submit"][value="Submit"]') || 
+                 document.querySelector('input[type="submit"]');
         
         if (submitBtn) {
             submitBtn.click();
@@ -843,8 +857,8 @@
         return false;
     }
 
-    // 为回复添加打赏按钮
-    function addTipButtons() {
+    // 为经典主题页的回复添加打赏按钮
+    function addTopicTipButtons() {
         const replies = document.querySelectorAll('.cell[id^="r_"]');
         
         replies.forEach(reply => {
@@ -902,6 +916,66 @@
                 actionContainer.appendChild(tipButton);
             }
         });
+    }
+
+    // 为 Planet 页的评论添加打赏按钮
+    function addPlanetTipButtons() {
+        const comments = document.querySelectorAll('.planet-comment');
+
+        comments.forEach(comment => {
+            const actions = comment.querySelector('.planet-comment-actions');
+            if (!actions || actions.querySelector('.tip-button')) return;
+
+            const userLink = comment.querySelector('.planet-comment-header a[href^="/member/"]');
+            if (!userLink) return;
+            const username = userLink.textContent.trim();
+            const commentId = comment.getAttribute('id');
+            const floorNumber = commentId ? commentId.replace('comment-', '') : null;
+
+            const tipButton = document.createElement('a');
+            const defaultLabel = '赏';
+
+            tipButton.href = '#';
+            tipButton.className = 'planet-comment-action tip-button planet-tip-button';
+            tipButton.title = `打赏 @${username}`;
+            tipButton.setAttribute('data-tip', '使用 $V2EX 或 Solana 打赏该评论');
+            tipButton.innerHTML = defaultLabel;
+
+            tipButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                tipButton.classList.add('loading');
+                tipButton.innerHTML = '...';
+
+                try {
+                    const address = await getUserAddress(username);
+
+                    if (!address) {
+                        alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                        return;
+                    }
+
+                    await showTipModal(username, address, floorNumber);
+                } catch (error) {
+                    console.error('获取用户信息失败:', error);
+                    alert('获取用户信息失败，请稍后重试');
+                } finally {
+                    tipButton.classList.remove('loading');
+                    tipButton.innerHTML = defaultLabel;
+                }
+            });
+
+            const replyAction = actions.querySelector('.planet-comment-action');
+            if (replyAction) {
+                actions.insertBefore(tipButton, replyAction);
+            } else {
+                actions.insertBefore(tipButton, actions.firstChild);
+            }
+        });
+    }
+
+    function addTipButtons() {
+        addTopicTipButtons();
+        addPlanetTipButtons();
     }
 
     // 加载Solana Web3.js（简化版本，实际使用Phantom钱包API）
