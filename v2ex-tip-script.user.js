@@ -273,6 +273,63 @@
             color: #6b7280;
         }
 
+        .tip-rpc-row {
+            margin-bottom: 20px;
+        }
+
+        .tip-rpc-label {
+            color: #9ca3af;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .tip-rpc-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .tip-rpc-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            background: #232936;
+            color: #d1d5db;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .tip-rpc-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #1a1f2e;
+        }
+
+        .tip-rpc-save {
+            padding: 10px 14px;
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .tip-rpc-save:hover {
+            background: #2563eb;
+        }
+
+        .tip-rpc-hint {
+            color: #6b7280;
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
         .tip-actions {
             display: flex;
             gap: 10px;
@@ -345,7 +402,8 @@
         }
     `);
 
-    const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
+    const DEFAULT_SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
+    const RPC_STORAGE_KEY = 'v2ex_tip_rpc_endpoint';
     const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
     const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
 
@@ -386,6 +444,25 @@
                 ontimeout: () => reject(new Error('Request timed out'))
             });
         });
+    }
+
+    // RPC 地址读写
+    function getRpcEndpoint() {
+        const saved = localStorage.getItem(RPC_STORAGE_KEY);
+        return saved && saved.trim() ? saved.trim() : DEFAULT_SOLANA_RPC;
+    }
+
+    function saveRpcEndpoint(value) {
+        const trimmed = (value || '').trim();
+        if (!trimmed) {
+            localStorage.removeItem(RPC_STORAGE_KEY);
+            return DEFAULT_SOLANA_RPC;
+        }
+        if (!/^https?:\/\//i.test(trimmed)) {
+            throw new Error('RPC 地址需以 http(s) 开头');
+        }
+        localStorage.setItem(RPC_STORAGE_KEY, trimmed);
+        return trimmed;
     }
 
     // 动态加载依赖脚本
@@ -466,6 +543,14 @@
                         </div>
                         <div class="tip-meta-sub">数额会 100% 进入对方的钱包</div>
                     </div>
+                    <div class="tip-rpc-row">
+                        <label class="tip-rpc-label">Solana RPC</label>
+                        <div class="tip-rpc-actions">
+                            <input type="text" id="tip-rpc-input" class="tip-rpc-input" placeholder="留空使用默认 RPC">
+                            <button class="tip-rpc-save" id="tip-rpc-save">保存</button>
+                        </div>
+                        <div class="tip-rpc-hint">默认值：${DEFAULT_SOLANA_RPC}</div>
+                    </div>
                     <div class="tip-amount-container">
                         <label class="tip-amount-label">选择金额</label>
                         <div class="tip-amounts" id="tip-amounts">
@@ -516,6 +601,26 @@
             });
         });
 
+        const rpcInput = document.getElementById('tip-rpc-input');
+        const rpcSaveBtn = document.getElementById('tip-rpc-save');
+
+        if (rpcInput) {
+            const savedEndpoint = getRpcEndpoint();
+            rpcInput.value = savedEndpoint === DEFAULT_SOLANA_RPC ? '' : savedEndpoint;
+        }
+
+        if (rpcSaveBtn && rpcInput) {
+            rpcSaveBtn.addEventListener('click', () => {
+                try {
+                    const endpoint = saveRpcEndpoint(rpcInput.value);
+                    rpcInput.value = endpoint === DEFAULT_SOLANA_RPC ? '' : endpoint;
+                    showMessage('RPC 已更新', 'success');
+                } catch (err) {
+                    showMessage(err.message || 'RPC 地址无效', 'error');
+                }
+            });
+        }
+
         return modal;
     }
 
@@ -548,6 +653,13 @@
         const messageEl = document.getElementById('tip-message');
         messageEl.className = 'tip-message';
         messageEl.textContent = '';
+
+        // 同步 RPC 输入
+        const rpcInput = document.getElementById('tip-rpc-input');
+        if (rpcInput) {
+            const endpoint = getRpcEndpoint();
+            rpcInput.value = endpoint === DEFAULT_SOLANA_RPC ? '' : endpoint;
+        }
 
         // 重置附言输入框
         const postscriptEl = document.getElementById('tip-postscript');
@@ -605,24 +717,7 @@
         showMessage('正在处理交易...', 'info');
 
         try {
-            // 检查Phantom钱包
-            if (!window.solana || !window.solana.isPhantom) {
-                throw new Error('请先安装 Phantom 钱包');
-            }
-
-            // 连接钱包（已连接则跳过授权弹窗）
-            if (!window.solana.isConnected) {
-                try {
-                    await window.solana.connect();
-                } catch (connErr) {
-                    const reason = connErr?.message || connErr?.code || 'Phantom 连接被拒绝';
-                    throw new Error(`Phantom 连接失败：${reason}`);
-                }
-            }
-            const fromAddress = window.solana.publicKey?.toString();
-            if (!fromAddress) {
-                throw new Error('未获取到钱包地址');
-            }
+            const fromAddress = await ensurePhantomConnectionInteractive();
 
             // 根据选择的token确定mint地址
             let mintAddress;
@@ -685,7 +780,7 @@
 
     // 构建Solana交易
     async function buildTransaction(from, to, amount, mint) {
-        const connection = new solanaWeb3.Connection(SOLANA_RPC, {
+        const connection = new solanaWeb3.Connection(getRpcEndpoint(), {
             commitment: 'confirmed',
             fetch: gmFetch
         });
@@ -757,7 +852,7 @@
                 }
                 
                 try {
-                    const response = await gmFetch(`${SOLANA_RPC}`, {
+                    const response = await gmFetch(`${getRpcEndpoint()}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -939,6 +1034,52 @@
             // 未授权时会拒绝，保持静默
             return false;
         }
+    }
+
+    // 带提示的 Phantom 连接，返回钱包地址
+    async function ensurePhantomConnectionInteractive() {
+        if (!window.solana || !window.solana.isPhantom) {
+            throw new Error('请先安装 Phantom 钱包');
+        }
+
+        if (!window.solana.isConnected) {
+            // 先尝试静默
+            try {
+                await window.solana.connect({ onlyIfTrusted: true });
+            } catch (silentErr) {
+                // ignore
+            }
+        }
+
+        if (!window.solana.isConnected) {
+            try {
+                await window.solana.connect();
+            } catch (connErr) {
+                console.error('Phantom connect error:', connErr);
+                const code = connErr?.code;
+                const msg = connErr?.message || '';
+                if (window.solana.isConnected && window.solana.publicKey) {
+                    return window.solana.publicKey.toString();
+                }
+                if (code === 4001) {
+                    throw new Error('Phantom 连接被用户拒绝');
+                }
+                if (code === -32002) {
+                    throw new Error('Phantom 已有连接请求待处理，请在钱包内确认或稍后重试');
+                }
+                if (msg === 'Unexpected error') {
+                    throw new Error('Phantom 返回 Unexpected error，请先解锁钱包或刷新后重试');
+                }
+                const detail = msg || code || '未知原因';
+                throw new Error(`Phantom 连接失败：${detail}`);
+            }
+        }
+
+        const pubkey = window.solana.publicKey?.toString();
+        if (!pubkey) {
+            throw new Error('Phantom 已连接但未返回地址，请在钱包中解锁后重试');
+        }
+        return pubkey;
     }
 
     // 初始化
