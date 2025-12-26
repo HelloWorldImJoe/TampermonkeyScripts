@@ -249,40 +249,6 @@
             background: #2d3748;
         }
 
-        .tip-postscript-container {
-            margin-bottom: 20px;
-        }
-
-        .tip-postscript-label {
-            color: #9ca3af;
-            font-size: 14px;
-            margin-bottom: 10px;
-            display: block;
-        }
-
-        .tip-postscript-input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #374151;
-            border-radius: 6px;
-            background: #232936;
-            color: #d1d5db;
-            font-size: 14px;
-            resize: vertical;
-            min-height: 60px;
-            box-sizing: border-box;
-        }
-
-        .tip-postscript-input:focus {
-            outline: none;
-            border-color: #3b82f6;
-            background: #1a1f2e;
-        }
-
-        .tip-postscript-input::placeholder {
-            color: #6b7280;
-        }
-
         .tip-actions {
             display: flex;
             gap: 10px;
@@ -361,6 +327,7 @@
 
     // 用户地址缓存
     const addressCache = new Map();
+    const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
 
     // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
     function gmFetch(url, options = {}) {
@@ -492,10 +459,6 @@
                             <label for="amount-500" class="tip-amount-label-radio">500</label>
                         </div>
                     </div>
-                    <div class="tip-postscript-container">
-                        <label class="tip-postscript-label">附言（将作为回复发送）</label>
-                        <textarea class="tip-postscript-input" id="tip-postscript" placeholder="感谢您的精彩回答"></textarea>
-                    </div>
                     <div class="tip-actions">
                         <button class="tip-button-action tip-button-cancel" id="tip-cancel">取消</button>
                         <button class="tip-button-action tip-button-confirm" id="tip-confirm">发送</button>
@@ -542,7 +505,7 @@
     }
 
     // 显示打赏弹窗
-    async function showTipModal(username, address, floorNumber) {
+    async function showTipModal(username, address, floorNumber, replyText) {
         let modal = document.getElementById('tip-modal-overlay');
         if (!modal) {
             modal = createTipModal();
@@ -558,12 +521,6 @@
         messageEl.className = 'tip-message';
         messageEl.textContent = '';
 
-        // 重置附言输入框
-        const postscriptEl = document.getElementById('tip-postscript');
-        if (postscriptEl) {
-            postscriptEl.value = '';
-        }
-
         // 重置token选择
         document.querySelectorAll('.tip-modal-tab').forEach(t => t.classList.remove('active'));
         document.querySelector('.tip-modal-tab[data-token="v2ex"]').classList.add('active');
@@ -575,7 +532,7 @@
         confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
         newConfirmBtn.addEventListener('click', async function() {
-            await handleTipConfirm(username, address, floorNumber);
+            await handleTipConfirm({ username, address, floorNumber, replyText });
         });
 
         modal.style.display = 'flex';
@@ -596,8 +553,25 @@
         messageEl.textContent = message;
     }
 
+    function getTopicTitle() {
+        const titleEl = document.querySelector('.header h1') || document.querySelector('.topic_header h1');
+        if (titleEl) return titleEl.textContent.trim();
+        const docTitle = document.title || '';
+        return docTitle.replace(/\s*-\s*V2EX.*/i, '').trim() || '该主题';
+    }
+
+    function sanitizeReplyText(text) {
+        return (text || DEFAULT_REPLY_MESSAGE).trim().replace(/\s+/g, ' ');
+    }
+
+    function buildReplyContent(username, replyText) {
+        const topicTitle = getTopicTitle();
+        const safeReply = sanitizeReplyText(replyText);
+        return `打赏了你在【${topicTitle}】的回复  ›  ${safeReply}`;
+    }
+
     // 处理打赏确认
-    async function handleTipConfirm(username, address, floorNumber) {
+    async function handleTipConfirm({ username, address, floorNumber, replyText }) {
         const confirmBtn = document.getElementById('tip-confirm');
         const selectedAmount = document.querySelector('input[name="amount"]:checked');
         const selectedToken = document.querySelector('.tip-modal-tab.active').dataset.token;
@@ -655,18 +629,19 @@
                 resolve();
             }, 2000));
 
-            // 提交到V2EX
-            await submitTransactionToV2EX(signature);
+            const replyContent = buildReplyContent(username, replyText);
+
+            await submitTipRecord({
+                signature,
+                amount,
+                memo: replyContent,
+                token: selectedToken
+            });
 
             showMessage('打赏成功！正在提交回复...', 'success');
-            
-            // 获取附言内容
-            const postscriptEl = document.getElementById('tip-postscript');
-            const postscript = postscriptEl ? postscriptEl.value.trim() : '';
-            
-            // 提交回复到帖子
+
             try {
-                const replySubmitted = await submitReplyToTopic(username, postscript, amount, floorNumber);
+                const replySubmitted = await submitReplyToTopic(replyContent);
                 if (replySubmitted) {
                     showMessage('打赏成功！回复已提交', 'success');
                 } else {
@@ -679,8 +654,8 @@
             
             setTimeout(() => {
                 // 新开标签查看交易
-                const txUrl = `${window.location.origin}/solana/tips`;
-                window.open(txUrl, '_blank');
+                // const txUrl = `${window.location.origin}/solana/tips`;
+                // window.open(txUrl, '_blank');
                 closeTipModal();
             }, 1500);
 
@@ -790,29 +765,31 @@
         });
     }
 
-    // 提交交易到V2EX
-    async function submitTransactionToV2EX(signature) {
-        const formData = new URLSearchParams();
-        formData.append('tx', signature);
-
-        const response = await fetch(`${window.location.origin}/solana/tx`, {
+    // 提交打赏记录到 V2EX
+    async function submitTipRecord({ signature, amount, memo, token }) {
+        const response = await fetch(`${window.location.origin}/solana/tip`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json'
             },
-            body: formData.toString(),
+            body: JSON.stringify({
+                tx: signature,
+                amount,
+                memo,
+                token
+            }),
             credentials: 'include'
         });
 
         if (!response.ok) {
-            throw new Error('提交交易记录失败');
+            throw new Error('提交打赏记录失败');
         }
 
         return response;
     }
 
     // 提交回复到帖子
-    async function submitReplyToTopic(username, postscript, amount, floor) {
+    async function submitReplyToTopic(replyContent) {
         // 获取回复框
         const replyBox = document.getElementById('reply_content') ||
                          document.querySelector('textarea[name="content"]') ||
@@ -823,11 +800,6 @@
             return false;
         }
 
-        // 构造回复内容
-        const amountLabel = amount ? `${amount} $v2ex` : '? $v2ex';
-        const floorLabel = floor ? `#${floor}` : '';
-        const replyContent = `@${username} ${floorLabel} [${amountLabel}] ${postscript || '感谢您的精彩回答'}`;
-        
         // 填充回复框
         replyBox.value = replyContent;
         replyBox.dispatchEvent(new Event('input', { bubbles: true }));
@@ -892,6 +864,8 @@
                 tipButton.innerHTML = '...';
 
                 try {
+                    const replyContentEl = reply.querySelector('.reply_content');
+                    const replyText = replyContentEl ? replyContentEl.innerText || replyContentEl.textContent : '';
                     const address = await getUserAddress(username);
 
                     if (!address) {
@@ -899,7 +873,7 @@
                         return;
                     }
 
-                    await showTipModal(username, address, floorNumber);
+                    await showTipModal(username, address, floorNumber, replyText);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
@@ -946,6 +920,8 @@
                 tipButton.innerHTML = '...';
 
                 try {
+                    const commentContentEl = comment.querySelector('.planet-comment-content') || comment.querySelector('.markdown_body');
+                    const replyText = commentContentEl ? commentContentEl.innerText || commentContentEl.textContent : '';
                     const address = await getUserAddress(username);
 
                     if (!address) {
@@ -953,7 +929,7 @@
                         return;
                     }
 
-                    await showTipModal(username, address, floorNumber);
+                    await showTipModal(username, address, floorNumber, replyText);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
