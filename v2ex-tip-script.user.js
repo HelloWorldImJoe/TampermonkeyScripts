@@ -321,6 +321,40 @@
             color: #3b82f6;
             font-weight: 600;
         }
+
+        .tip-postscript-container {
+            margin-bottom: 20px;
+        }
+
+        .tip-postscript-label {
+            color: #9ca3af;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .tip-postscript-input {
+            width: 100%;
+            padding: 10px;
+            background: #232936;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            color: #d1d5db;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .tip-postscript-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .tip-postscript-input::placeholder {
+            color: #6b7280;
+        }
     `);
 
     const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
@@ -487,6 +521,10 @@
                             <label for="amount-500" class="tip-amount-label-radio">500</label>
                         </div>
                     </div>
+                    <div class="tip-postscript-container">
+                        <label class="tip-postscript-label">附言（可选）</label>
+                        <textarea id="tip-postscript" class="tip-postscript-input" placeholder="可以在这里写一些想对 TA 说的话..." maxlength="500"></textarea>
+                    </div>
                     <div class="tip-actions">
                         <button class="tip-button-action tip-button-cancel" id="tip-cancel">取消</button>
                         <button class="tip-button-action tip-button-confirm" id="tip-confirm">发送</button>
@@ -548,6 +586,17 @@
         const messageEl = document.getElementById('tip-message');
         messageEl.className = 'tip-message';
         messageEl.textContent = '';
+
+        // 重置附言输入框与可见性（Planet 场景不提供附言）
+        const isPlanetContext = isPlanetPage() || options.tipType === 'planet-post' || options.tipType === 'planet-comment';
+        const postscriptContainer = document.querySelector('.tip-postscript-container');
+        const postscriptEl = document.getElementById('tip-postscript');
+        if (postscriptContainer) {
+            postscriptContainer.style.display = isPlanetContext ? 'none' : '';
+        }
+        if (postscriptEl) {
+            postscriptEl.value = '';
+        }
 
         // 重置token选择
         document.querySelectorAll('.tip-modal-tab').forEach(t => t.classList.remove('active'));
@@ -627,6 +676,19 @@
         return `打赏了你在【${topicTitle}】的回复 › ${safeReply}${linkPart}`;
     }
 
+    function buildPostscriptContent({ username, floorNumber, amount, token, postscript }) {
+        const tokenLabel = token === 'v2ex' ? '$v2ex' : 'SOL';
+        const amountLabel = amount ? `${amount} ${tokenLabel}` : `? ${tokenLabel}`;
+        const floorLabel = floorNumber ? `#${floorNumber}` : '';
+        const parts = [
+            `@${username}`,
+            floorLabel,
+            `[${amountLabel}]`,
+            postscript || DEFAULT_REPLY_MESSAGE
+        ].filter(Boolean);
+        return parts.join(' ');
+    }
+
     // 处理打赏确认
     async function handleTipConfirm({ username, address, floorNumber, replyText, replyId, options = {} }) {
         const confirmBtn = document.getElementById('tip-confirm');
@@ -696,6 +758,36 @@
             });
 
             showMessage('打赏成功！', 'success');
+
+            // 检查是否有附言需要发送
+            const postscriptEl = document.getElementById('tip-postscript');
+            const postscript = postscriptEl ? postscriptEl.value.trim() : '';
+            
+            if (postscript && replyId) {
+                try {
+                    showMessage('正在发送附言...', 'info');
+                    const postscriptContent = buildPostscriptContent({
+                        username,
+                        floorNumber,
+                        amount,
+                        token: selectedToken,
+                        postscript
+                    });
+                    await sendPostscript({
+                        username,
+                        floorNumber,
+                        amount,
+                        token: selectedToken,
+                        postscript: postscriptContent,
+                        replyId,
+                        options
+                    });
+                    showMessage('打赏成功，附言已发送！', 'success');
+                } catch (psError) {
+                    console.error('发送附言失败:', psError);
+                    showMessage('打赏成功，但附言发送失败', 'error');
+                }
+            }
             
             setTimeout(() => {
                 // 新开标签查看交易
@@ -833,6 +925,62 @@
         return response;
     }
 
+    function getReplyBox() {
+        return document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
+    }
+
+    function getReplySubmitButton() {
+        return document.querySelector('input[type="submit"].super.normal.button') ||
+            document.querySelector('input[type="submit"][value="回复"]') ||
+            document.querySelector('button[type="submit"]');
+    }
+
+    function appendPostscriptViaApi(replyId, content) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: `${window.location.origin}/append/reply/${replyId}`,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                data: `content=${encodeURIComponent(content)}`,
+                onload: function(response) {
+                    if (response.status === 200) {
+                        resolve(response);
+                    } else {
+                        reject(new Error('发送附言失败'));
+                    }
+                },
+                onerror: function() {
+                    reject(new Error('网络请求失败'));
+                }
+            });
+        });
+    }
+
+    // 发送回复附言（优先使用回复框提交，找不到输入框时回退到 append 接口）
+    async function sendPostscript({ username, floorNumber, amount, token, postscript, replyId, options = {} }) {
+        const isPlanet = isPlanetPage() || options.tipType === 'planet-post';
+        const replyBox = isPlanet ? null : getReplyBox();
+
+        if (replyBox) {
+            replyBox.value = postscript;
+            const submitBtn = getReplySubmitButton();
+            if (!submitBtn) {
+                throw new Error('未找到回复提交按钮');
+            }
+            submitBtn.click();
+            return 'submitted-via-form';
+        }
+
+        if (replyId) {
+            await appendPostscriptViaApi(replyId, postscript);
+            return 'submitted-via-append';
+        }
+
+        throw new Error('未找到可用的附言提交方式');
+    }
+
     // 为经典主题页的回复添加打赏按钮
     function addTopicTipButtons() {
         const replies = document.querySelectorAll('.cell[id^="r_"]');
@@ -935,7 +1083,9 @@
                         return;
                     }
 
-                    await showTipModal(username, address, floorNumber, replyText, replyId);
+                    await showTipModal(username, address, floorNumber, replyText, replyId, {
+                        tipType: 'planet-comment'
+                    });
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
