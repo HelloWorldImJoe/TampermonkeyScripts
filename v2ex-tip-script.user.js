@@ -582,8 +582,7 @@
         let linkPart = '';
         if (replyId) {
             if (planetPage) {
-                const baseUrl = `${window.location.origin}${window.location.pathname}${window.location.search || ''}`;
-                linkPart = ` ${baseUrl}`;
+                linkPart = ` ${window.location.href}`;
             } else if (topicId) {
                 linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
             }
