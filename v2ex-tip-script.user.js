@@ -859,7 +859,7 @@
             tipButton.href = '#';
             tipButton.className = 'thank tip-button';
             tipButton.title = `打赏 @${username}`;
-            tipButton.setAttribute('data-tip', '使用 $V2EX 或 Solana 打赏该回复');
+            tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该回复');
             tipButton.innerHTML = defaultLabel;
 
             tipButton.addEventListener('click', async (e) => {
@@ -916,7 +916,7 @@
             tipButton.href = '#';
             tipButton.className = 'planet-comment-action tip-button planet-tip-button';
             tipButton.title = `打赏 @${username}`;
-            tipButton.setAttribute('data-tip', '使用 $V2EX 或 Solana 打赏该评论');
+            tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该评论');
             tipButton.innerHTML = defaultLabel;
 
             tipButton.addEventListener('click', async (e) => {
@@ -985,7 +985,7 @@
             tipButton.className = 'tip-button planet-tip-button';
             tipButton.textContent = '赏';
             tipButton.title = '打赏该 Planet 主题';
-            tipButton.setAttribute('data-tip', '使用 $V2EX 或 Solana 打赏该主题');
+            tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该主题');
 
             tipButton.addEventListener('click', async (e) => {
                 e.preventDefault();
