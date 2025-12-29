@@ -505,7 +505,7 @@
     }
 
     // 显示打赏弹窗
-    async function showTipModal(username, address, floorNumber, replyText) {
+    async function showTipModal(username, address, floorNumber, replyText, replyId) {
         let modal = document.getElementById('tip-modal-overlay');
         if (!modal) {
             modal = createTipModal();
@@ -532,7 +532,7 @@
         confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
         newConfirmBtn.addEventListener('click', async function() {
-            await handleTipConfirm({ username, address, floorNumber, replyText });
+            await handleTipConfirm({ username, address, floorNumber, replyText, replyId });
         });
 
         modal.style.display = 'flex';
@@ -564,14 +564,26 @@
         return (text || DEFAULT_REPLY_MESSAGE).trim().replace(/\s+/g, ' ');
     }
 
-    function buildReplyContent(username, replyText) {
+    function getTopicId() {
+        const match = window.location.pathname.match(/\/t\/(\d+)/);
+        return match ? match[1] : null;
+    }
+
+    function buildReplyContent(username, replyText, replyId) {
         const topicTitle = getTopicTitle();
         const safeReply = sanitizeReplyText(replyText);
-        return `打赏了你在【${topicTitle}】的回复  ›  ${safeReply}`;
+        const topicId = getTopicId();
+        
+        let linkPart = '';
+        if (topicId && replyId) {
+            linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
+        }
+        
+        return `打赏了你在【${topicTitle}】的回复 › ${safeReply}${linkPart}`;
     }
 
     // 处理打赏确认
-    async function handleTipConfirm({ username, address, floorNumber, replyText }) {
+    async function handleTipConfirm({ username, address, floorNumber, replyText, replyId }) {
         const confirmBtn = document.getElementById('tip-confirm');
         const selectedAmount = document.querySelector('input[name="amount"]:checked');
         const selectedToken = document.querySelector('.tip-modal-tab.active').dataset.token;
@@ -629,7 +641,7 @@
                 resolve();
             }, 2000));
 
-            const replyContent = buildReplyContent(username, replyText);
+            const replyContent = buildReplyContent(username, replyText, replyId);
 
             await submitTipRecord({
                 signature,
@@ -813,6 +825,7 @@
                 try {
                     const replyContentEl = reply.querySelector('.reply_content');
                     const replyText = replyContentEl ? replyContentEl.innerText || replyContentEl.textContent : '';
+                    const replyId = reply.id; // 获取回复ID，格式如 'r_17147431'
                     const address = await getUserAddress(username);
 
                     if (!address) {
@@ -820,7 +833,7 @@
                         return;
                     }
 
-                    await showTipModal(username, address, floorNumber, replyText);
+                    await showTipModal(username, address, floorNumber, replyText, replyId);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
@@ -869,6 +882,7 @@
                 try {
                     const commentContentEl = comment.querySelector('.planet-comment-content') || comment.querySelector('.markdown_body');
                     const replyText = commentContentEl ? commentContentEl.innerText || commentContentEl.textContent : '';
+                    const replyId = comment.id; // 获取评论ID
                     const address = await getUserAddress(username);
 
                     if (!address) {
@@ -876,7 +890,7 @@
                         return;
                     }
 
-                    await showTipModal(username, address, floorNumber, replyText);
+                    await showTipModal(username, address, floorNumber, replyText, replyId);
                 } catch (error) {
                     console.error('获取用户信息失败:', error);
                     alert('获取用户信息失败，请稍后重试');
