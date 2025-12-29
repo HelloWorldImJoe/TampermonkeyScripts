@@ -569,14 +569,24 @@
         return match ? match[1] : null;
     }
 
+    function isPlanetPage() {
+        return window.location.pathname.includes('/planet/');
+    }
+
     function buildReplyContent(username, replyText, replyId) {
         const topicTitle = getTopicTitle();
         const safeReply = sanitizeReplyText(replyText);
         const topicId = getTopicId();
+        const planetPage = isPlanetPage();
         
         let linkPart = '';
-        if (topicId && replyId) {
-            linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
+        if (replyId) {
+            if (planetPage) {
+                const baseUrl = `${window.location.origin}${window.location.pathname}${window.location.search || ''}`;
+                linkPart = ` ${baseUrl}`;
+            } else if (topicId) {
+                linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
+            }
         }
         
         return `打赏了你在【${topicTitle}】的回复 › ${safeReply}${linkPart}`;
