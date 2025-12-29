@@ -576,8 +576,7 @@
         
         let linkPart = '';
         if (topicId && replyId) {
-            linkPart = ` /t/${topicId}#${replyId}`;
-            // linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
+            linkPart = ` ${window.location.origin}/t/${topicId}#${replyId}`;
         }
         
         return `打赏了你在【${topicTitle}】的回复 › ${safeReply}${linkPart}`;
