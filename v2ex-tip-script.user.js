@@ -638,24 +638,12 @@
                 token: selectedToken
             });
 
-            showMessage('打赏成功！正在提交回复...', 'success');
-
-            try {
-                const replySubmitted = await submitReplyToTopic(replyContent);
-                if (replySubmitted) {
-                    showMessage('打赏成功！回复已提交', 'success');
-                } else {
-                    showMessage('打赏成功！但回复提交失败，请手动回复', 'success');
-                }
-            } catch (replyError) {
-                console.error('提交回复失败:', replyError);
-                showMessage('打赏成功！但回复提交失败，请手动回复', 'success');
-            }
+            showMessage('打赏成功！', 'success');
             
             setTimeout(() => {
                 // 新开标签查看交易
-                // const txUrl = `${window.location.origin}/solana/tips`;
-                // window.open(txUrl, '_blank');
+                const txUrl = `${window.location.origin}/solana/tips`;
+                window.open(txUrl, '_blank');
                 closeTipModal();
             }, 1500);
 
@@ -786,47 +774,6 @@
         }
 
         return response;
-    }
-
-    // 提交回复到帖子
-    async function submitReplyToTopic(replyContent) {
-        // 获取回复框
-        const replyBox = document.getElementById('reply_content') ||
-                         document.querySelector('textarea[name="content"]') ||
-                         document.getElementById('planet-post-comment-input') ||
-                         document.querySelector('textarea[name="comment"]');
-        if (!replyBox) {
-            console.warn('未找到回复框，跳过自动回复');
-            return false;
-        }
-
-        // 填充回复框
-        replyBox.value = replyContent;
-        replyBox.dispatchEvent(new Event('input', { bubbles: true }));
-
-        // 等待一小段时间确保内容已填充
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        // 查找并点击提交按钮
-        const submitBtn = document.getElementById('planet-post-comment-submit') ||
-                 document.querySelector('input[type="submit"][value="回复"]') || 
-                 document.querySelector('button[type="submit"]') || 
-                 document.querySelector('input[type="submit"][value="Submit"]') || 
-                 document.querySelector('input[type="submit"]');
-        
-        if (submitBtn) {
-            submitBtn.click();
-            return true;
-        } else {
-            // 尝试提交表单
-            const form = replyBox.closest('form');
-            if (form) {
-                form.submit();
-                return true;
-            }
-        }
-
-        return false;
     }
 
     // 为经典主题页的回复添加打赏按钮
