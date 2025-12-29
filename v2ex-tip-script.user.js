@@ -7,7 +7,9 @@
 // @match        https://www.v2ex.com/t/*
 // @match        https://*.v2ex.com/t/*
 // @match        https://www.v2ex.com/planet/*
+// @match        https://www.v2ex.com/planet
 // @match        https://*.v2ex.com/planet/*
+// @match        https://*.v2ex.com/planet
 // @icon         https://www.v2ex.com/static/icon-192.png
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -327,6 +329,7 @@
 
     // 用户地址缓存
     const addressCache = new Map();
+    const planetOwnerCache = new Map();
     const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
 
     // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
@@ -425,6 +428,31 @@
         });
     }
 
+    // 获取 Planet 站点的作者 V2EX 用户名
+    async function getPlanetOwnerUsername(siteAddress) {
+        if (planetOwnerCache.has(siteAddress)) {
+            return planetOwnerCache.get(siteAddress);
+        }
+
+        try {
+            const response = await gmFetch(`${window.location.origin}/planet/${siteAddress}`);
+            if (!response.ok) {
+                throw new Error('获取 Planet 作者失败');
+            }
+
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const memberLink = doc.querySelector('.header a[href^="/member/"]');
+            const username = memberLink?.textContent?.trim() || memberLink?.getAttribute('href')?.split('/')?.pop() || null;
+            planetOwnerCache.set(siteAddress, username);
+            return username;
+        } catch (err) {
+            console.error('获取 Planet 作者失败:', err);
+            planetOwnerCache.set(siteAddress, null);
+            return null;
+        }
+    }
+
     // 创建打赏弹窗
     function createTipModal() {
         const modal = document.createElement('div');
@@ -505,7 +533,7 @@
     }
 
     // 显示打赏弹窗
-    async function showTipModal(username, address, floorNumber, replyText, replyId) {
+    async function showTipModal(username, address, floorNumber, replyText, replyId, options = {}) {
         let modal = document.getElementById('tip-modal-overlay');
         if (!modal) {
             modal = createTipModal();
@@ -532,7 +560,7 @@
         confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
         newConfirmBtn.addEventListener('click', async function() {
-            await handleTipConfirm({ username, address, floorNumber, replyText, replyId });
+            await handleTipConfirm({ username, address, floorNumber, replyText, replyId, options });
         });
 
         modal.style.display = 'flex';
@@ -573,7 +601,15 @@
         return window.location.pathname.includes('/planet/');
     }
 
-    function buildReplyContent(username, replyText, replyId) {
+    function buildReplyContent({ replyText, replyId, options = {} }) {
+        const { tipType, planetTitle, planetLink } = options;
+
+        if (tipType === 'planet-post') {
+            const safeTitle = sanitizeReplyText(planetTitle || getTopicTitle()) || 'Planet 主题';
+            const linkPart = planetLink ? `, ${planetLink}` : '';
+            return `打赏了你的Planet主题:[${safeTitle}]${linkPart}`;
+        }
+
         const topicTitle = getTopicTitle();
         const safeReply = sanitizeReplyText(replyText);
         const topicId = getTopicId();
@@ -592,7 +628,7 @@
     }
 
     // 处理打赏确认
-    async function handleTipConfirm({ username, address, floorNumber, replyText, replyId }) {
+    async function handleTipConfirm({ username, address, floorNumber, replyText, replyId, options = {} }) {
         const confirmBtn = document.getElementById('tip-confirm');
         const selectedAmount = document.querySelector('input[name="amount"]:checked');
         const selectedToken = document.querySelector('.tip-modal-tab.active').dataset.token;
@@ -650,7 +686,7 @@
                 resolve();
             }, 2000));
 
-            const replyContent = buildReplyContent(username, replyText, replyId);
+            const replyContent = buildReplyContent({ replyText, replyId, options });
 
             await submitTipRecord({
                 signature,
@@ -921,6 +957,76 @@
     function addTipButtons() {
         addTopicTipButtons();
         addPlanetTipButtons();
+        addPlanetPostTipButtons();
+    }
+
+    // 为 Planet 主列表的主题卡片添加打赏按钮
+    function addPlanetPostTipButtons() {
+        const posts = document.querySelectorAll('.planet-post');
+
+        posts.forEach(post => {
+            const footer = post.querySelector('.planet-post-footer');
+            if (!footer || footer.querySelector('.planet-post-tip')) return;
+
+            const statsPart = footer.querySelector('.planet-post-footer-part.stats');
+            if (!statsPart) return;
+
+            const siteAddress = post.getAttribute('data-site-address');
+            const postUuid = post.getAttribute('data-post-uuid');
+            const titleEl = post.querySelector('.planet-post-title');
+            const planetTitle = titleEl ? titleEl.textContent.trim() : '';
+            const planetLink = siteAddress && postUuid ? `${window.location.origin}/planet/${siteAddress}/${postUuid}` : window.location.href;
+
+            const tipWrapper = document.createElement('div');
+            tipWrapper.className = 'planet-post-footer-part planet-post-tip';
+
+            const tipButton = document.createElement('a');
+            tipButton.href = '#';
+            tipButton.className = 'tip-button planet-tip-button';
+            tipButton.textContent = '赏';
+            tipButton.title = '打赏该 Planet 主题';
+            tipButton.setAttribute('data-tip', '使用 $V2EX 或 Solana 打赏该主题');
+
+            tipButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                tipButton.classList.add('loading');
+                tipButton.textContent = '...';
+
+                try {
+                    if (!siteAddress) {
+                        throw new Error('未获取到 Planet 地址');
+                    }
+
+                    const username = await getPlanetOwnerUsername(siteAddress);
+                    if (!username) {
+                        alert('未找到作者的 V2EX 用户名，暂时无法打赏');
+                        return;
+                    }
+
+                    const address = await getUserAddress(username);
+                    if (!address) {
+                        alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                        return;
+                    }
+
+                    await showTipModal(username, address, null, planetTitle, postUuid, {
+                        tipType: 'planet-post',
+                        planetTitle,
+                        planetLink
+                    });
+                } catch (error) {
+                    console.error('为 Planet 主题添加打赏失败:', error);
+                    alert(error.message || '获取作者信息失败，请稍后重试');
+                } finally {
+                    tipButton.classList.remove('loading');
+                    tipButton.textContent = '赏';
+                }
+            });
+
+            tipWrapper.appendChild(tipButton);
+            statsPart.insertAdjacentElement('afterend', tipWrapper);
+        });
     }
 
     // 加载Solana Web3.js（简化版本，实际使用Phantom钱包API）
