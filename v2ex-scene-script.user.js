@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -18,8 +18,9 @@
 (function() {
     'use strict';
 
-    // 添加样式
-    GM_addStyle(`
+    const isMemberPage = window.location.pathname.startsWith('/member/');
+
+    const baseStyles = `
         :root {
             --tip-button-color: #374151;
             --tip-button-hover-bg: rgba(59, 130, 246, 0.12);
@@ -32,6 +33,10 @@
             --tip-chat-accent: #6366f1;
             --tip-chat-bubble-self: #2563eb;
             --tip-chat-bubble-peer: rgba(100, 116, 139, 0.35);
+            --dm-accent: #3b82f6;
+            --dm-bg: #0f172a;
+            --dm-text: #e5e7eb;
+            --dm-muted: #9ca3af;
         }
 
         .Night {
@@ -41,7 +46,9 @@
             --tip-chat-sidebar-bg: #070d18;
             --tip-chat-border: rgba(148, 163, 184, 0.28);
         }
+    `;
 
+    const tipStyles = `
         .tip-button {
             cursor: pointer;
             color: var(--dm-accent, #3b82f6);
@@ -393,7 +400,9 @@
         .tip-postscript-input::placeholder {
             color: #6b7280;
         }
+    `;
 
+    const dmAndChatStyles = `
         /* DM UI */
         :root {
             --dm-accent: #3b82f6;
@@ -909,6 +918,12 @@
             opacity: 0.6;
             cursor: not-allowed;
         }
+    `;
+
+    GM_addStyle(`
+        ${baseStyles}
+        ${isMemberPage ? '' : tipStyles}
+        ${dmAndChatStyles}
     `);
 
     // Solana RPC 端点
