@@ -2251,8 +2251,8 @@
         banner.id = 'tip-update-banner';
         banner.className = 'tip-update-banner';
         banner.innerHTML = `
-            <span>发现新版本 <strong>v${latestVersion}</strong>，请前往仓库升级。</span>
-            <a href="https://github.com/HelloWorldImJoe/TampermonkeyScripts" target="_blank" rel="noopener noreferrer">立即查看</a>
+            <span>发现新版本 <strong>v${latestVersion}</strong>，请前往升级。</span>
+            <a href="${SCRIPT_UPDATE_URL}" target="_blank" rel="noopener noreferrer">立即安装</a>
             <button class="tip-update-close" type="button">×</button>
         `;
         const closeBtn = banner.querySelector('.tip-update-close');
