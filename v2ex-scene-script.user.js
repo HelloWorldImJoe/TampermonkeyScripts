@@ -12,6 +12,7 @@
 // @grant        GM_registerMenuCommand
 // @connect      www.v2ex.com
 // @connect      jillian-fnk7b6-fast-mainnet.helius-rpc.com
+// @connect      raw.githubusercontent.com
 // ==/UserScript==
 
 (function() {
@@ -23,11 +24,22 @@
             --tip-button-color: #374151;
             --tip-button-hover-bg: rgba(59, 130, 246, 0.12);
             --tip-button-hover-border: #3b82f6;
+            --tip-chat-panel-bg: #0f172a;
+            --tip-chat-sidebar-bg: #111a2f;
+            --tip-chat-border: rgba(148, 163, 184, 0.18);
+            --tip-chat-text: #e2e8f0;
+            --tip-chat-muted: #94a3b8;
+            --tip-chat-accent: #6366f1;
+            --tip-chat-bubble-self: #2563eb;
+            --tip-chat-bubble-peer: rgba(100, 116, 139, 0.35);
         }
 
         .Night {
             --tip-button-color: #9aa0ae;
             --tip-button-hover-bg: rgba(59, 130, 246, 0.08);
+            --tip-chat-panel-bg: #050a18;
+            --tip-chat-sidebar-bg: #070d18;
+            --tip-chat-border: rgba(148, 163, 184, 0.28);
         }
 
         .tip-button {
@@ -117,6 +129,37 @@
             transition: all 0.16s ease;
             z-index: 2;
             margin-bottom: -1px;
+        }
+
+        .tip-update-banner {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.94);
+            color: #e2e8f0;
+            padding: 14px 18px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            font-size: 13px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            z-index: 2147483647;
+        }
+
+        .tip-update-banner a {
+            color: #60a5fa;
+            text-decoration: underline;
+            font-weight: 600;
+        }
+
+        .tip-update-close {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 15px;
+            cursor: pointer;
         }
 
         #tip-modal-overlay {
@@ -459,27 +502,516 @@
         }
         .quick-thank-modal input[type=checkbox] { margin-right: 6px; }
         .quick-thank-modal .actions { margin-top: 10px; text-align: right; }
+
+        .tip-chat-launcher {
+            position: fixed;
+            right: 26px;
+            bottom: 26px;
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            border: none;
+            background: var(--tip-chat-accent, #6366f1);
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 18px 45px rgba(2, 6, 23, 0.55);
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .tip-chat-launcher:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 22px 55px rgba(15, 23, 42, 0.65);
+        }
+        .tip-chat-launcher-indicator {
+            position: absolute;
+            top: 9px;
+            right: 10px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f87171;
+            box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.32);
+        }
+        .tip-chat-panel {
+            position: fixed;
+            right: 26px;
+            bottom: 90px;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(12px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .tip-chat-panel.open {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+        .tip-chat-shell {
+            width: min(920px, 96vw);
+            height: min(740px, 85vh);
+            display: flex;
+            border-radius: 18px;
+            overflow: hidden;
+            background: var(--tip-chat-panel-bg);
+            border: 1px solid var(--tip-chat-border);
+            color: var(--tip-chat-text);
+            box-shadow: 0 30px 70px rgba(2, 6, 23, 0.7);
+        }
+        .tip-chat-sidebar {
+            width: 320px;
+            background: var(--tip-chat-sidebar-bg);
+            border-right: 1px solid var(--tip-chat-border);
+            display: flex;
+            flex-direction: column;
+        }
+        .tip-chat-sidebar-header {
+            padding: 18px 20px 12px;
+            border-bottom: 1px solid var(--tip-chat-border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .tip-chat-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .tip-chat-subtitle {
+            font-size: 12px;
+            color: var(--tip-chat-muted);
+        }
+        .tip-chat-sidebar-actions {
+            display: flex;
+            gap: 6px;
+        }
+        .tip-chat-icon-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            border: 1px solid var(--tip-chat-border);
+            background: transparent;
+            color: var(--tip-chat-text);
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s ease;
+        }
+        .tip-chat-icon-btn:hover {
+            background: rgba(148, 163, 184, 0.12);
+        }
+        .tip-chat-icon-btn.loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .tip-chat-conversation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .tip-chat-conversation-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--tip-chat-muted);
+            font-size: 13px;
+        }
+        .tip-chat-conversation-item {
+            width: 100%;
+            border: none;
+            background: transparent;
+            color: inherit;
+            padding: 10px;
+            border-radius: 10px;
+            display: flex;
+            gap: 10px;
+            cursor: pointer;
+            text-align: left;
+            transition: background 0.2s ease;
+        }
+        .tip-chat-conversation-item:hover {
+            background: rgba(148, 163, 184, 0.12);
+        }
+        .tip-chat-conversation-item.active {
+            background: rgba(99, 102, 241, 0.18);
+        }
+        .tip-chat-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: rgba(148, 163, 184, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--tip-chat-text);
+            overflow: hidden;
+        }
+        .tip-chat-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .tip-chat-conversation-meta {
+            flex: 1;
+            min-width: 0;
+        }
+        .tip-chat-conversation-meta header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .tip-chat-conversation-meta header span:last-child {
+            color: var(--tip-chat-muted);
+            font-size: 12px;
+        }
+        .tip-chat-conversation-preview {
+            color: var(--tip-chat-muted);
+            font-size: 12px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .tip-chat-thread {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--tip-chat-panel-bg);
+        }
+        .tip-chat-thread-header {
+            padding: 18px 22px 14px;
+            border-bottom: 1px solid var(--tip-chat-border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .tip-chat-thread-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .tip-chat-thread-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .tip-chat-thread-meta {
+            font-size: 12px;
+            color: var(--tip-chat-muted);
+            margin-top: 2px;
+        }
+        .tip-chat-pin-btn {
+            min-width: 54px;
+            height: 30px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.35);
+            color: var(--tip-chat-muted);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace;
+            padding: 0 14px 0 16px;
+            transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        }
+        .tip-chat-pin-btn:hover {
+            color: var(--tip-chat-text);
+            border-color: rgba(99, 102, 241, 0.65);
+            background: rgba(99, 102, 241, 0.18);
+        }
+        .tip-chat-pin-btn.pinned {
+            color: var(--tip-chat-text);
+            border-color: rgba(99, 102, 241, 0.8);
+            background: rgba(99, 102, 241, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
+        }
+        .tip-chat-thread-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .tip-chat-composer {
+            border-top: 1px solid var(--tip-chat-border);
+            padding: 14px 22px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--tip-chat-panel-bg);
+        }
+        .tip-chat-composer textarea {
+            width: 100%;
+            min-height: 54px;
+            border-radius: 14px;
+            border: 1px solid var(--tip-chat-border);
+            background: rgba(15, 23, 42, 0.4);
+            color: var(--tip-chat-text);
+            padding: 10px 12px;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+        }
+        .tip-chat-composer textarea:focus {
+            outline: none;
+            border-color: rgba(99, 102, 241, 0.7);
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
+        }
+        .tip-chat-composer textarea:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .tip-chat-composer-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .tip-chat-composer-status {
+            font-size: 12px;
+            color: var(--tip-chat-muted);
+            flex: 1;
+            min-height: 16px;
+        }
+        .tip-chat-send-btn {
+            border: none;
+            background: #6366f1;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        .tip-chat-send-btn:hover:not([disabled]) {
+            opacity: 0.9;
+        }
+        .tip-chat-send-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .tip-chat-empty {
+            margin: auto;
+            text-align: center;
+            color: var(--tip-chat-muted);
+            font-size: 13px;
+        }
+        .tip-chat-thread-hint {
+            text-align: center;
+            font-size: 12px;
+            color: var(--tip-chat-muted);
+        }
+        .tip-chat-message {
+            max-width: 88%;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .tip-chat-message.incoming {
+            align-self: flex-start;
+            flex-direction: row;
+        }
+        .tip-chat-message.outgoing {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+            text-align: right;
+            margin-left: auto;
+        }
+        .tip-chat-message-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--tip-chat-text);
+        }
+        .tip-chat-message-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .tip-chat-message-content {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-width: 100%;
+        }
+        .tip-chat-message.outgoing .tip-chat-message-content {
+            align-items: flex-end;
+        }
+        .tip-chat-message-meta {
+            font-size: 11px;
+            color: var(--tip-chat-muted);
+            display: flex;
+            gap: 6px;
+            justify-content: flex-start;
+        }
+        .tip-chat-message.outgoing .tip-chat-message-meta {
+            justify-content: flex-end;
+        }
+        .tip-chat-message-bubble {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: var(--tip-chat-bubble-peer);
+            color: var(--tip-chat-text);
+            line-height: 1.45;
+            font-size: 13px;
+            word-break: break-word;
+            align-self: flex-start;
+            max-width: 100%;
+        }
+        .tip-chat-message.outgoing .tip-chat-message-bubble {
+            background: var(--tip-chat-bubble-self);
+            align-self: flex-end;
+        }
+        .tip-chat-thread-list::-webkit-scrollbar,
+        .tip-chat-conversation-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .tip-chat-thread-list::-webkit-scrollbar-thumb,
+        .tip-chat-conversation-list::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.35);
+            border-radius: 3px;
+        }
+        .tip-chat-cta-btn {
+            margin-top: 12px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--tip-chat-border);
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--tip-chat-text);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .tip-chat-cta-btn:hover:not([disabled]) {
+            background: rgba(99, 102, 241, 0.2);
+        }
+        .tip-chat-cta-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
     `);
 
+    // Solana RPC 端点
     const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
+    // Solana Web3.js CDN 链接
     const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
+    // Solana SPL Token CDN 链接
     const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
+    // V2EX 代币铸币地址
     const V2EX_MINT = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
+    // 消息成本
     const MESSAGE_COST = 1;
 
     // 用户地址缓存
     const addressCache = new Map();
+    // Planet 所有者缓存
     const planetOwnerCache = new Map();
+    // 默认回复消息
     const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
+    // 快速感谢自动提交标志
     const QUICK_THANK_AUTO_SUBMIT = false;
+    // 快速感谢模板函数
     const QUICK_THANK_TEMPLATE = (names) => `感谢 ${names.join(' ')} 的打赏！🎉\n`;
+    // 快速感谢存储键
     const QUICK_THANK_STORAGE_KEY = 'quick-thank-thanked-users-v1';
+    // DM 模态元素
     let dmModalEl = null;
+    // 快速感谢是否已初始化
     let quickThankInitialized = false;
+
+    // 聊天记录存储键
+    const TIP_CHAT_STORAGE_KEY = 'v2ex-tip-chat-records-v1';
+    // 聊天元数据存储键
+    const TIP_CHAT_META_KEY = 'v2ex-tip-chat-meta-v1';
+    // 当前登录用户缓存键
+    const TIP_CHAT_SELF_KEY = 'v2ex-tip-chat-self';
+    // 聊天记录最大限制
+    const TIP_CHAT_RECORD_LIMIT = 600;
+    // 脚本远程地址
+    const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/v2ex-scene-script.user.js';
+    // 脚本检查缓存键
+    const SCRIPT_UPDATE_CHECK_KEY = 'v2ex-tip-chat-update-check';
+    // 更新检查间隔（6 小时）
+    const SCRIPT_UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
+    // 每页记录数量预估（用于计算最大分页请求）
+    const TIP_CHAT_PAGE_ESTIMATE = 20;
+    // 引导阶段最多抓取的页面数量
+    const TIP_CHAT_MAX_BOOTSTRAP_PAGES = Math.ceil(TIP_CHAT_RECORD_LIMIT / TIP_CHAT_PAGE_ESTIMATE) + 2;
+    // 增量页面数量
+    const TIP_CHAT_INCREMENTAL_PAGES = 2;
+    // 刷新间隔（毫秒）
+    const TIP_CHAT_REFRESH_INTERVAL = 120000;
+    // 初始加载数量
+    const TIP_CHAT_INITIAL_LOAD = 30;
+    // 加载步长
+    const TIP_CHAT_LOAD_STEP = 20;
+    // 手动刷新修复页数上限
+    const TIP_CHAT_REPAIR_PAGES = 6;
+    // 聊天是否已初始化标志
+    // 聊天是否已初始化标志
+    let tipChatInitialized = false;
+    // 升级检测是否已安排
+    let scriptUpdateCheckScheduled = false;
+    // 聊天状态对象
+    const tipChatState = {
+        // 聊天记录数组
+        records: [],
+        // 对话映射
+        conversationMap: new Map(),
+        // 摘要数组
+        summaries: [],
+        // 活跃对等方
+        activePeer: null,
+        // 可见计数映射
+        visibleCountMap: new Map(),
+        // 元素对象
+        elements: {},
+        // 当前登录用户
+        currentUser: null,
+        // 刷新状态
+        refreshing: null,
+        // 刷新定时器
+        refreshTimer: null,
+        // 用户是否向上滚动
+        userScrolledUp: false,
+        // 面板是否固定
+        pinned: false,
+        // 是否正在发送新消息
+        composerSending: false,
+        // 已提示的升级版本
+        upgradePromptedVersion: null
+    };
+    // 成员头像缓存
+    const memberAvatarCache = new Map();
+    // 成员头像请求缓存
+    const memberAvatarRequestCache = new Map();
 
     // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
     function gmFetch(url, options = {}) {
         return new Promise((resolve, reject) => {
+            const shouldSendCredentials = typeof options.withCredentials === 'boolean'
+                ? options.withCredentials
+                : (typeof window !== 'undefined' && window.location && url.startsWith(window.location.origin));
             GM_xmlhttpRequest({
                 url,
                 method: options.method || 'GET',
@@ -487,6 +1019,7 @@
                 data: options.body,
                 timeout: options.timeout || 15000,
                 responseType: options.responseType || 'text',
+                withCredentials: shouldSendCredentials,
                 onload: (resp) => {
                     const headers = new Headers();
                     if (resp.responseHeaders) {
@@ -1016,7 +1549,8 @@
                             id: 1,
                             method: 'getSignatureStatuses',
                             params: [[signature]]
-                        })
+                        }),
+                        withCredentials: false
                     });
                     
                     const data = await response.json();
@@ -1103,6 +1637,45 @@
         if (dmModalEl) dmModalEl.style.display = 'none';
     }
 
+    async function sendDmMessage({ username, address, text, onStatus }) {
+        const content = (text || '').trim();
+        if (!content || content.length < 3) {
+            throw new Error('请至少输入 3 个字符');
+        }
+        const normalizedAddress = typeof address === 'string' ? address.trim() : '';
+        if (!isSolAddress(normalizedAddress)) {
+            throw new Error('对方未绑定地址，无法发送');
+        }
+        const reportStatus = (msg) => {
+            if (typeof onStatus === 'function' && msg) {
+                onStatus(msg);
+            }
+        };
+        reportStatus('准备钱包...');
+        await ensureSolanaLibraries();
+        if (!window.solana || !window.solana.isPhantom) {
+            throw new Error('请安装并解锁 Phantom 钱包');
+        }
+        await ensurePhantomConnected();
+        if (!window.solana.isConnected) {
+            reportStatus('连接钱包...');
+            await window.solana.connect();
+        }
+        const from = window.solana.publicKey?.toString();
+        if (!from) {
+            throw new Error('未获取到钱包地址');
+        }
+        reportStatus('构建交易...');
+        const tx = await buildTransaction(from, normalizedAddress, MESSAGE_COST, V2EX_MINT);
+        reportStatus('等待钱包签名...');
+        const { signature } = await window.solana.signAndSendTransaction(tx);
+        reportStatus('链上确认中...');
+        await waitForTransaction(signature);
+        const memo = content.slice(0, 180);
+        await submitMessageRecord({ signature, amount: MESSAGE_COST, memo, to: username });
+        return { signature, memo };
+    }
+
     async function handleDmSend({ username, address, contentEl, sendBtn, statusEl }) {
         const text = (contentEl.value || '').trim();
         if (!text || text.length < 3) {
@@ -1112,26 +1685,15 @@
 
         try {
             sendBtn.disabled = true;
-            statusEl.textContent = '准备钱包...';
-            await ensureSolanaLibraries();
-            if (!window.solana || !window.solana.isPhantom) {
-                throw new Error('请安装并解锁 Phantom 钱包');
-            }
-            await ensurePhantomConnected();
-            if (!window.solana.isConnected) {
-                await window.solana.connect();
-            }
-            const from = window.solana.publicKey?.toString();
-            if (!from) throw new Error('未获取到钱包地址');
-
-            const tx = await buildTransaction(from, address, MESSAGE_COST, V2EX_MINT);
-            statusEl.textContent = '等待钱包签名...';
-            const { signature } = await window.solana.signAndSendTransaction(tx);
-            statusEl.textContent = '链上确认中...';
-            await waitForTransaction(signature);
-
-            const memo = `${text}`.slice(0, 180);
-            await submitMessageRecord({ signature, amount: MESSAGE_COST, memo, to: username });
+            sendBtn.textContent = '发送中...';
+            await sendDmMessage({
+                username,
+                address,
+                text,
+                onStatus: (msg) => {
+                    statusEl.textContent = msg;
+                }
+            });
             statusEl.textContent = '私信已发送并记录';
             setTimeout(() => {
                 closeDmModal();
@@ -1140,7 +1702,9 @@
         } catch (err) {
             console.error('私信发送失败', err);
             statusEl.textContent = err.message || '私信发送失败';
+        } finally {
             sendBtn.disabled = false;
+            sendBtn.textContent = '发送私信';
         }
     }
 
@@ -1161,6 +1725,26 @@
             }
         }
         throw new Error('链上转账成功，但私信记录提交失败');
+    }
+
+    function getCurrentUsername() {
+        const topLink = document.querySelector('#Top .tools a[href^="/member/"]');
+        if (topLink) {
+            const text = topLink.textContent?.trim();
+            if (text) return text;
+        }
+        const altLink = document.querySelector('a.top[href^="/member/"]');
+        return altLink ? altLink.textContent?.trim() || null : null;
+    }
+
+    function getUsernameFromDocument(doc) {
+        if (!doc) return null;
+        const navLink = doc.querySelector('#Top .tools a[href^="/member/"]');
+        if (navLink?.textContent) {
+            return navLink.textContent.trim();
+        }
+        const altLink = doc.querySelector('a.top[href^="/member/"]');
+        return altLink?.textContent?.trim() || null;
     }
 
     function getProfileUsername() {
@@ -1531,6 +2115,1298 @@
         }
     }
 
+    function safeJsonParse(value, fallback) {
+        if (!value) return fallback;
+        try {
+            return JSON.parse(value);
+        } catch (err) {
+            return fallback;
+        }
+    }
+
+    function loadTipChatRecords() {
+        return safeJsonParse(localStorage.getItem(TIP_CHAT_STORAGE_KEY), []);
+    }
+
+    function saveTipChatRecords(records) {
+        try {
+            localStorage.setItem(TIP_CHAT_STORAGE_KEY, JSON.stringify(records));
+        } catch (err) {
+            console.warn('保存打赏记录失败', err);
+        }
+    }
+
+    function loadTipChatMeta() {
+        return safeJsonParse(localStorage.getItem(TIP_CHAT_META_KEY), {
+            latestId: null,
+            lastSeenId: null,
+            updatedAt: 0
+        });
+    }
+
+    function saveTipChatMeta(meta) {
+        const payload = {
+            latestId: meta?.latestId || null,
+            lastSeenId: meta?.lastSeenId || null,
+            updatedAt: meta?.updatedAt || Date.now()
+        };
+        try {
+            localStorage.setItem(TIP_CHAT_META_KEY, JSON.stringify(payload));
+        } catch (err) {
+            console.warn('保存打赏元信息失败', err);
+        }
+    }
+
+    function loadTipChatSelf() {
+        try {
+            const stored = localStorage.getItem(TIP_CHAT_SELF_KEY);
+            return stored ? stored.trim() : null;
+        } catch (err) {
+            console.warn('读取当前用户失败', err);
+            return null;
+        }
+    }
+
+    function saveTipChatSelf(username) {
+        if (!username) return;
+        const normalized = username.trim();
+        if (!normalized) return;
+        tipChatState.currentUser = normalized;
+        try {
+            localStorage.setItem(TIP_CHAT_SELF_KEY, normalized);
+        } catch (err) {
+            console.warn('保存当前用户失败', err);
+        }
+    }
+
+    function resolveTipChatCurrentUser() {
+        if (tipChatState.currentUser) {
+            return tipChatState.currentUser;
+        }
+        const domUser = getCurrentUsername();
+        if (domUser) {
+            saveTipChatSelf(domUser);
+            return domUser;
+        }
+        const stored = loadTipChatSelf();
+        if (stored) {
+            tipChatState.currentUser = stored;
+            return stored;
+        }
+        return null;
+    }
+
+    function loadScriptUpdateMeta() {
+        return safeJsonParse(localStorage.getItem(SCRIPT_UPDATE_CHECK_KEY), {
+            checkedAt: 0,
+            latestVersion: null
+        }) || { checkedAt: 0, latestVersion: null };
+    }
+
+    function saveScriptUpdateMeta(meta) {
+        try {
+            localStorage.setItem(SCRIPT_UPDATE_CHECK_KEY, JSON.stringify(meta));
+        } catch (err) {
+            console.warn('保存更新检查信息失败', err);
+        }
+    }
+
+    function getCurrentScriptVersion() {
+        if (typeof GM_info === 'object' && GM_info?.script?.version) {
+            return GM_info.script.version;
+        }
+        const metaTag = document.querySelector('meta[name="version"]');
+        return metaTag?.getAttribute('content') || '0.0.0';
+    }
+
+    function compareVersions(a = '0.0.0', b = '0.0.0') {
+        const parse = (input) => input.split('.').map(part => parseInt(part, 10) || 0);
+        const partsA = parse(a);
+        const partsB = parse(b);
+        const max = Math.max(partsA.length, partsB.length);
+        for (let i = 0; i < max; i++) {
+            const diff = (partsA[i] || 0) - (partsB[i] || 0);
+            if (diff !== 0) return diff > 0 ? 1 : -1;
+        }
+        return 0;
+    }
+
+    async function fetchLatestScriptVersion() {
+        const response = await gmFetch(SCRIPT_UPDATE_URL, { method: 'GET', timeout: 15000 });
+        if (!response.ok) {
+            throw new Error('获取最新脚本失败');
+        }
+        const text = await response.text();
+        const match = text.match(/@version\s+([0-9.]+)/);
+        return match ? match[1].trim() : null;
+    }
+
+    function showUpgradeBanner(latestVersion) {
+        if (!document.body) return;
+        if (!latestVersion) return;
+        if (tipChatState.upgradePromptedVersion === latestVersion) return;
+        tipChatState.upgradePromptedVersion = latestVersion;
+        if (document.getElementById('tip-update-banner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'tip-update-banner';
+        banner.className = 'tip-update-banner';
+        banner.innerHTML = `
+            <span>发现新版本 <strong>v${latestVersion}</strong>，请前往仓库升级。</span>
+            <a href="https://github.com/HelloWorldImJoe/TampermonkeyScripts" target="_blank" rel="noopener noreferrer">立即查看</a>
+            <button class="tip-update-close" type="button">×</button>
+        `;
+        const closeBtn = banner.querySelector('.tip-update-close');
+        closeBtn?.addEventListener('click', () => {
+            banner.remove();
+        });
+        document.body.appendChild(banner);
+    }
+
+    function scheduleScriptUpdateCheck() {
+        if (scriptUpdateCheckScheduled) return;
+        scriptUpdateCheckScheduled = true;
+        setTimeout(() => {
+            runScriptUpdateCheck().catch(() => {});
+        }, 3500);
+    }
+
+    async function runScriptUpdateCheck({ force = false } = {}) {
+        const currentVersion = getCurrentScriptVersion();
+        const record = loadScriptUpdateMeta();
+        const now = Date.now();
+        if (!force && record?.checkedAt && (now - record.checkedAt) < SCRIPT_UPDATE_INTERVAL) {
+            if (record.latestVersion && compareVersions(record.latestVersion, currentVersion) > 0) {
+                showUpgradeBanner(record.latestVersion);
+            }
+            return;
+        }
+        try {
+            const latestVersion = await fetchLatestScriptVersion();
+            saveScriptUpdateMeta({ checkedAt: now, latestVersion });
+            if (latestVersion && compareVersions(latestVersion, currentVersion) > 0) {
+                showUpgradeBanner(latestVersion);
+            }
+        } catch (err) {
+            console.warn('检查脚本更新失败', err);
+        }
+    }
+
+    function trimTipRecords(records) {
+        if (!Array.isArray(records)) return [];
+        if (records.length <= TIP_CHAT_RECORD_LIMIT) return records;
+        return records.slice(records.length - TIP_CHAT_RECORD_LIMIT);
+    }
+
+    function mergeTipRecords(base, incoming) {
+        const map = new Map();
+        (base || []).forEach(record => {
+            if (record?.id) {
+                map.set(record.id, record);
+            }
+        });
+        (incoming || []).forEach(record => {
+            if (!record?.id) return;
+            map.set(record.id, { ...(map.get(record.id) || {}), ...record });
+        });
+        const merged = Array.from(map.values());
+        merged.sort((a, b) => {
+            const diff = (a.timestamp || 0) - (b.timestamp || 0);
+            if (diff !== 0) return diff;
+            return (a.id || '').localeCompare(b.id || '');
+        });
+        return merged;
+    }
+
+    // 从 localStorage 重新同步内存中的打赏记录，避免跨标签页或重载后的状态漂移
+    function syncTipChatStateFromStorage() {
+        const stored = loadTipChatRecords();
+        if (!Array.isArray(stored)) return false;
+        const currentRecords = Array.isArray(tipChatState.records) ? tipChatState.records : [];
+        const currentLatestId = currentRecords.length ? currentRecords[currentRecords.length - 1]?.id : null;
+        const storedLatestId = stored.length ? stored[stored.length - 1]?.id : null;
+        const currentCount = currentRecords.length;
+        const storedCount = stored.length;
+
+        // 仅在存储中存在更新（更多条目或不同的最新 ID）时才回填，避免覆盖本地未保存的新增记录
+        const shouldSync = (storedCount > currentCount) || (storedLatestId && storedLatestId !== currentLatestId);
+        if (!shouldSync) return false;
+
+        tipChatState.records = trimTipRecords(stored);
+        rebuildTipConversationMap();
+        tipChatState.summaries = getConversationSummaries();
+        return true;
+    }
+
+    function parseAmountInfo(text = '') {
+        if (!text) return { amount: null, token: 'v2ex' };
+        const cleaned = text.replace(/,/g, '');
+        const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(?:\$?V2EX|SOL)/i);
+        if (match) {
+            return {
+                amount: parseFloat(match[1]),
+                token: match[0].toLowerCase().includes('sol') ? 'sol' : 'v2ex'
+            };
+        }
+        return {
+            amount: null,
+            token: cleaned.toLowerCase().includes('sol') ? 'sol' : 'v2ex'
+        };
+    }
+
+    function normalizeUsernameFromHref(href) {
+        if (!href) return null;
+        const match = href.match(/\/member\/([^\/?#]+)/);
+        return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function extractSignatureId(link) {
+        if (!link) return null;
+        const text = link.textContent?.trim();
+        if (text && text.length > 20) return text;
+        const href = link.getAttribute('href') || link.href || '';
+        const match = href.match(/tx\/([^/?]+)/i);
+        if (match) return match[1];
+        return href || text || null;
+    }
+
+    function extractAvatarFromLink(link) {
+        if (!link) return null;
+        const img = link.querySelector('img');
+        if (img?.src) return img.src;
+        const parentImg = link.parentElement?.querySelector('img.avatar');
+        return parentImg?.src || null;
+    }
+
+    function findInlineAvatarForUsername(username) {
+        if (!username || typeof document === 'undefined') return null;
+        const links = document.querySelectorAll('a[href^="/member/"]');
+        for (const link of links) {
+            if (normalizeUsernameFromHref(link.getAttribute('href')) === username) {
+                const src = extractAvatarFromLink(link);
+                if (src) return src;
+            }
+        }
+        return null;
+    }
+
+    function extractAvatarFromCell(cell, index = 0) {
+        const avatars = Array.from(cell.querySelectorAll('img.avatar'));
+        if (!avatars.length) return null;
+        return avatars[index]?.src || avatars[0]?.src || null;
+    }
+
+    function formatRelativeTime(ts) {
+        const diff = Date.now() - (ts || Date.now());
+        const abs = Math.abs(diff);
+        const units = [
+            { label: '天', value: 86400000 },
+            { label: '小时', value: 3600000 },
+            { label: '分钟', value: 60000 }
+        ];
+        for (const unit of units) {
+            if (abs >= unit.value) {
+                const count = Math.floor(abs / unit.value);
+                return `${count}${unit.label}前`;
+            }
+        }
+        return '刚刚';
+    }
+
+    function formatAbsoluteTime(ts) {
+        const date = new Date(ts || Date.now());
+        if (Number.isNaN(date.getTime())) return '';
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function parseRelativeTimeLabel(label) {
+        if (!label) return Date.now();
+        const text = label.trim();
+        if (!text) return Date.now();
+        const normalized = text.replace(/\s+/g, ' ');
+        const parsedDate = Date.parse(normalized.replace(/年|月/g, '/').replace(/日/g, '').replace(/-/g, '/'));
+        if (!Number.isNaN(parsedDate)) {
+            return parsedDate;
+        }
+        if (/刚刚/.test(normalized)) {
+            return Date.now();
+        }
+        let diff = 0;
+        const dayMatch = normalized.match(/(\d+)\s*天/);
+        if (dayMatch) {
+            diff += parseInt(dayMatch[1], 10) * 86400000;
+        }
+        const hourMatch = normalized.match(/(\d+)\s*小时/);
+        if (hourMatch) {
+            diff += parseInt(hourMatch[1], 10) * 3600000;
+        }
+        const minuteMatch = normalized.match(/(\d+)\s*分/);
+        if (minuteMatch) {
+            diff += parseInt(minuteMatch[1], 10) * 60000;
+        }
+        const secondMatch = normalized.match(/(\d+)\s*秒/);
+        if (secondMatch) {
+            diff += parseInt(secondMatch[1], 10) * 1000;
+        }
+        if (diff === 0 && /前/.test(normalized)) {
+            diff = 60000;
+        }
+        return Date.now() - diff;
+    }
+
+    function formatRecordPreview(record) {
+        if (record?.memo) {
+            return record.memo.length > 80 ? `${record.memo.slice(0, 77)}…` : record.memo;
+        }
+        if (record?.amount) {
+            const tokenLabel = record.token === 'sol' ? 'SOL' : '$V2EX';
+            return `打赏 ${record.amount} ${tokenLabel}`;
+        }
+        return `${record?.from || '?'} → ${record?.to || '?'}`;
+    }
+
+    function formatMessageBody(record) {
+        if (record?.memo) return record.memo;
+        const tokenLabel = record?.token === 'sol' ? 'SOL' : '$V2EX';
+        if (record?.amount) {
+            return `打赏 ${record.amount} ${tokenLabel}`;
+        }
+        const fallback = `${record?.from || ''} -> ${record?.to || ''}`.trim();
+        return fallback || '无附言';
+    }
+
+    function escapeHtmlText(value = '') {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return value.replace(/[&<>"']/g, (ch) => map[ch]).replace(/\n/g, '<br>');
+    }
+
+    function rebuildTipConversationMap() {
+        const me = resolveTipChatCurrentUser();
+        if (!me) return;
+        const nextMap = new Map();
+        (tipChatState.records || []).forEach((record) => {
+            if (!record) return;
+            if (record.from !== me && record.to !== me) return;
+            const peer = record.from === me ? record.to : record.from;
+            if (!peer) return;
+            if (!nextMap.has(peer)) {
+                nextMap.set(peer, []);
+            }
+            nextMap.get(peer).push(record);
+        });
+        nextMap.forEach((list, key) => {
+            list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            nextMap.set(key, list);
+        });
+        tipChatState.conversationMap = nextMap;
+    }
+
+    function resolveAvatarForUser(username, records) {
+        if (!username) return null;
+        if (memberAvatarCache.has(username) && memberAvatarCache.get(username)) {
+            return memberAvatarCache.get(username);
+        }
+        const inlineAvatar = findInlineAvatarForUsername(username);
+        if (inlineAvatar) {
+            memberAvatarCache.set(username, inlineAvatar);
+            return inlineAvatar;
+        }
+        if (!Array.isArray(records)) return memberAvatarCache.get(username) || null;
+        for (let i = records.length - 1; i >= 0; i--) {
+            const record = records[i];
+            if (record?.from === username && record.fromAvatar) {
+                memberAvatarCache.set(username, record.fromAvatar);
+                return record.fromAvatar;
+            }
+            if (record?.to === username && record.toAvatar) {
+                memberAvatarCache.set(username, record.toAvatar);
+                return record.toAvatar;
+            }
+        }
+        return memberAvatarCache.get(username) || null;
+    }
+
+    function fetchMemberAvatar(username) {
+        if (!username) return Promise.resolve(null);
+        if (memberAvatarCache.has(username) && memberAvatarCache.get(username)) {
+            return Promise.resolve(memberAvatarCache.get(username));
+        }
+        if (memberAvatarRequestCache.has(username)) {
+            return memberAvatarRequestCache.get(username);
+        }
+        const request = (async () => {
+            try {
+                const response = await gmFetch(`${window.location.origin}/member/${encodeURIComponent(username)}`);
+                if (!response.ok) return null;
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const img = doc.querySelector('#Main .box .cell img.avatar, #Main img.avatar');
+                const url = img?.src || null;
+                if (url) {
+                    memberAvatarCache.set(username, url);
+                    applyAvatarToRecords(username, url);
+                }
+                return url;
+            } catch (err) {
+                console.warn('获取头像失败:', err);
+                return null;
+            }
+        })().finally(() => {
+            memberAvatarRequestCache.delete(username);
+        });
+        memberAvatarRequestCache.set(username, request);
+        return request;
+    }
+
+    function applyAvatarToRecords(username, avatarUrl) {
+        if (!username || !avatarUrl) return;
+        let updated = false;
+        (tipChatState.records || []).forEach((record) => {
+            if (record?.from === username && !record.fromAvatar) {
+                record.fromAvatar = avatarUrl;
+                updated = true;
+            }
+            if (record?.to === username && !record.toAvatar) {
+                record.toAvatar = avatarUrl;
+                updated = true;
+            }
+        });
+        if (updated) {
+            saveTipChatRecords(tipChatState.records);
+            tipChatState.summaries = tipChatState.summaries.map((summary) => summary.peer === username ? { ...summary, avatar: avatarUrl } : summary);
+            renderTipConversationList();
+            if (tipChatState.activePeer === username) {
+                renderTipThread();
+            }
+        }
+    }
+
+    function ensureAvatarForPeer(username) {
+        if (!username) return;
+        if (memberAvatarCache.has(username) && memberAvatarCache.get(username)) return;
+        fetchMemberAvatar(username).catch(() => {});
+    }
+
+    function getConversationSummaries() {
+        const summaries = [];
+        tipChatState.conversationMap.forEach((records, peer) => {
+            if (!records.length) return;
+            const last = records[records.length - 1];
+            summaries.push({
+                peer,
+                lastMessage: formatRecordPreview(last),
+                lastTimestamp: last.timestamp || 0,
+                avatar: resolveAvatarForUser(peer, records)
+            });
+        });
+        summaries.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+        return summaries;
+    }
+
+    function createTipChatUIIfNeeded() {
+        if (tipChatState.elements.launcher || !document.body) return;
+
+        const launcher = document.createElement('button');
+        launcher.type = 'button';
+        launcher.id = 'tip-chat-launcher';
+        launcher.className = 'tip-chat-launcher';
+        launcher.innerHTML = '<span class="tip-chat-launcher-icon">💬</span>';
+        const indicator = document.createElement('span');
+        indicator.className = 'tip-chat-launcher-indicator';
+        indicator.hidden = true;
+        launcher.appendChild(indicator);
+        document.body.appendChild(launcher);
+
+        const panel = document.createElement('div');
+        panel.id = 'tip-chat-panel';
+        panel.className = 'tip-chat-panel';
+        panel.innerHTML = `
+            <div class="tip-chat-shell">
+                <aside class="tip-chat-sidebar">
+                    <div class="tip-chat-sidebar-header">
+                        <div>
+                            <div class="tip-chat-title">V2EX会话</div>
+                            <div class="tip-chat-subtitle">基于 $V2EX 打赏记录</div>
+                        </div>
+                        <div class="tip-chat-sidebar-actions">
+                            <button class="tip-chat-pin-btn" title="固定面板">PIN</button>
+                            <button class="tip-chat-icon-btn tip-chat-refresh" title="刷新">⟳</button>
+                            <button class="tip-chat-icon-btn tip-chat-close" title="关闭">✕</button>
+                        </div>
+                    </div>
+                    <div class="tip-chat-conversation-list" id="tip-chat-conversation-list"></div>
+                </aside>
+                <section class="tip-chat-thread">
+                    <div class="tip-chat-thread-header">
+                        <div class="tip-chat-thread-info">
+                            <div class="tip-chat-thread-title" id="tip-chat-thread-title">选择会话</div>
+                            <div class="tip-chat-thread-meta" id="tip-chat-thread-meta">最近 30 条消息</div>
+                        </div>
+                    </div>
+                    <div class="tip-chat-thread-list" id="tip-chat-thread-list">
+                        <div class="tip-chat-empty">正在加载...</div>
+                    </div>
+                    <div class="tip-chat-composer">
+                        <textarea id="tip-chat-composer-input" placeholder="选择会话以发送私信" maxlength="500"></textarea>
+                        <div class="tip-chat-composer-actions">
+                            <div class="tip-chat-composer-status" id="tip-chat-composer-status"></div>
+                            <button class="tip-chat-send-btn" id="tip-chat-send-btn" type="button">发送</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        `;
+        document.body.appendChild(panel);
+
+        tipChatState.elements = {
+            launcher,
+            launcherIndicator: indicator,
+            panel,
+            conversationList: panel.querySelector('#tip-chat-conversation-list'),
+            threadList: panel.querySelector('#tip-chat-thread-list'),
+            threadTitle: panel.querySelector('#tip-chat-thread-title'),
+            threadMeta: panel.querySelector('#tip-chat-thread-meta'),
+            composerInput: panel.querySelector('#tip-chat-composer-input'),
+            composerStatus: panel.querySelector('#tip-chat-composer-status'),
+            composerSendBtn: panel.querySelector('#tip-chat-send-btn'),
+            pinBtn: panel.querySelector('.tip-chat-pin-btn'),
+            refreshBtn: panel.querySelector('.tip-chat-refresh'),
+            closeBtn: panel.querySelector('.tip-chat-close')
+        };
+
+        launcher.addEventListener('click', () => toggleTipChatPanel());
+        tipChatState.elements.closeBtn.addEventListener('click', () => toggleTipChatPanel(false));
+        tipChatState.elements.refreshBtn.addEventListener('click', () => {
+            refreshTipChatData({ forceFull: needsTipChatBootstrap(), repair: true });
+        });
+        if (tipChatState.elements.pinBtn) {
+            tipChatState.elements.pinBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleTipChatPinned();
+            });
+        }
+        if (tipChatState.elements.composerSendBtn) {
+            tipChatState.elements.composerSendBtn.addEventListener('click', handleTipChatComposerSend);
+        }
+        if (tipChatState.elements.composerInput) {
+            tipChatState.elements.composerInput.addEventListener('keydown', (event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    handleTipChatComposerSend();
+                }
+            });
+        }
+        tipChatState.elements.threadList.addEventListener('scroll', handleTipChatScroll);
+        updateTipChatPinUI();
+        const handleGlobalClick = (event) => {
+            if (!isTipChatPanelOpen()) return;
+            const panelEl = tipChatState.elements.panel;
+            const launcherEl = tipChatState.elements.launcher;
+            const path = typeof event.composedPath === 'function' ? event.composedPath() : null;
+            const isInsidePanel = panelEl ? path ? path.includes(panelEl) : panelEl.contains(event.target) : false;
+            const isLauncher = launcherEl ? path ? path.includes(launcherEl) : launcherEl.contains(event.target) : false;
+            if (!isInsidePanel && !isLauncher) {
+                if (tipChatState.pinned) return;
+                toggleTipChatPanel(false);
+            }
+        };
+        tipChatState.elements.handleGlobalClick = handleGlobalClick;
+        document.addEventListener('click', handleGlobalClick);
+        updateTipComposerState({ preserveStatus: false });
+    }
+
+    function updateLauncherBadge(hasNew) {
+        const indicator = tipChatState.elements.launcherIndicator;
+        if (!indicator) return;
+        indicator.hidden = !hasNew;
+    }
+
+    function isTipChatPanelOpen() {
+        return Boolean(tipChatState.elements.panel?.classList.contains('open'));
+    }
+
+    function toggleTipChatPanel(force) {
+        const panel = tipChatState.elements.panel;
+        if (!panel) return;
+        const shouldOpen = typeof force === 'boolean' ? force : !panel.classList.contains('open');
+        panel.classList.toggle('open', shouldOpen);
+        if (shouldOpen) {
+            const hadUnreadIndicator = Boolean(tipChatState.elements.launcherIndicator && !tipChatState.elements.launcherIndicator.hidden);
+            syncTipChatStateFromStorage();
+            if (shouldReloadAfterUnreadOpen(hadUnreadIndicator)) {
+                setTimeout(() => window.location.reload(), 250);
+                return;
+            }
+            markTipChatSeen();
+            tipChatState.userScrolledUp = false;
+            renderTipConversationList();
+            renderTipThread();
+            maybeRefreshTipChatOnOpen();
+        }
+    }
+
+    function shouldReloadAfterUnreadOpen(hadUnreadIndicator) {
+        if (!hadUnreadIndicator) return false;
+        const summaries = Array.isArray(tipChatState.summaries) ? tipChatState.summaries : [];
+        return summaries.length === 0;
+    }
+
+    function toggleTipChatPinned(force) {
+        const next = typeof force === 'boolean' ? force : !tipChatState.pinned;
+        tipChatState.pinned = next;
+        updateTipChatPinUI();
+    }
+
+    function updateTipChatPinUI() {
+        const pinned = Boolean(tipChatState.pinned);
+        const pinBtn = tipChatState.elements.pinBtn;
+        const panel = tipChatState.elements.panel;
+        if (pinBtn) {
+            pinBtn.classList.toggle('pinned', pinned);
+            pinBtn.textContent = pinned ? 'UNPIN' : 'PIN';
+            pinBtn.title = pinned ? '已固定，点击取消' : '固定面板';
+        }
+        if (panel) {
+            panel.classList.toggle('pinned', pinned);
+        }
+    }
+
+    function maybeRefreshTipChatOnOpen() {
+        const hasConversations = tipChatState.conversationMap?.size > 0;
+        const meta = loadTipChatMeta();
+        const hasUnreadMeta = Boolean(meta.latestId && meta.lastSeenId !== meta.latestId);
+        if (!hasConversations) {
+            refreshTipChatData({ forceFull: true });
+            return;
+        }
+        if (hasUnreadMeta) {
+            refreshTipChatData({ forceFull: false });
+        }
+    }
+
+    function markTipChatSeen() {
+        const meta = loadTipChatMeta();
+        if (!meta.latestId) return;
+        meta.lastSeenId = meta.latestId;
+        meta.updatedAt = Date.now();
+        saveTipChatMeta(meta);
+        updateLauncherBadge(false);
+    }
+
+    function needsTipChatBootstrap() {
+        if (!tipChatState.records || !tipChatState.records.length) return true;
+        const meta = loadTipChatMeta();
+        return !meta.latestId;
+    }
+ 
+    function createTipChatBootstrapCallout({ className = 'tip-chat-conversation-empty', message } = {}) {
+        const wrapper = document.createElement('div');
+        wrapper.className = className;
+        const text = document.createElement('div');
+        text.textContent = message || '首次使用需要同步全部打赏记录，点击下方按钮即可开始。';
+        wrapper.appendChild(text);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tip-chat-cta-btn';
+        if (tipChatState.refreshing) {
+            btn.disabled = true;
+            btn.textContent = '同步中...';
+        } else {
+            btn.textContent = '立即同步';
+        }
+        btn.addEventListener('click', () => triggerTipChatBootstrap(btn));
+        wrapper.appendChild(btn);
+        return wrapper;
+    }
+ 
+    function triggerTipChatBootstrap(button) {
+        if (tipChatState.refreshing) return tipChatState.refreshing;
+        const shouldReloadAfter = needsTipChatBootstrap();
+        if (button) {
+            button.disabled = true;
+            button.textContent = '同步中...';
+        }
+        const promise = refreshTipChatData({ forceFull: true }).then(() => {
+            tipChatState.summaries = getConversationSummaries();
+            renderTipConversationList();
+            renderTipThread();
+            if (shouldReloadAfter && !needsTipChatBootstrap()) {
+                setTimeout(() => window.location.reload(), 500);
+            }
+        }).finally(() => {
+            if (button) {
+                button.disabled = false;
+                button.textContent = '重新同步';
+            }
+        });
+        return promise;
+    }
+ 
+    function renderTipConversationList() {
+        const container = tipChatState.elements.conversationList;
+        if (!container) return;
+        container.innerHTML = '';
+        if (!tipChatState.summaries.length) {
+            if (needsTipChatBootstrap()) {
+                container.appendChild(createTipChatBootstrapCallout());
+                if (tipChatState.elements.threadList) {
+                    const callout = createTipChatBootstrapCallout({
+                        className: 'tip-chat-empty',
+                        message: '尚未同步打赏记录，点击下方按钮开始全量获取。'
+                    });
+                    tipChatState.elements.threadList.innerHTML = '';
+                    tipChatState.elements.threadList.appendChild(callout);
+                }
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'tip-chat-conversation-empty';
+                empty.textContent = '暂无与您相关的打赏消息';
+                container.appendChild(empty);
+                if (tipChatState.elements.threadList) {
+                    tipChatState.elements.threadList.innerHTML = '<div class="tip-chat-empty">暂无消息</div>';
+                }
+            }
+            return;
+        }
+        ensureActiveTipPeer();
+        tipChatState.summaries.forEach((summary) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'tip-chat-conversation-item';
+            if (summary.peer === tipChatState.activePeer) {
+                item.classList.add('active');
+            }
+            const avatarWrap = document.createElement('div');
+            avatarWrap.className = 'tip-chat-avatar';
+            if (summary.avatar) {
+                const img = document.createElement('img');
+                img.src = summary.avatar;
+                img.alt = summary.peer;
+                avatarWrap.appendChild(img);
+            } else {
+                avatarWrap.textContent = (summary.peer || '?').slice(0, 1).toUpperCase();
+            }
+            const metaWrap = document.createElement('div');
+            metaWrap.className = 'tip-chat-conversation-meta';
+            const header = document.createElement('header');
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = `@${summary.peer}`;
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = summary.lastTimestamp ? formatAbsoluteTime(summary.lastTimestamp) : '';
+            header.appendChild(nameSpan);
+            header.appendChild(timeSpan);
+            const preview = document.createElement('div');
+            preview.className = 'tip-chat-conversation-preview';
+            preview.textContent = summary.lastMessage || '';
+            metaWrap.appendChild(header);
+            metaWrap.appendChild(preview);
+            item.appendChild(avatarWrap);
+            item.appendChild(metaWrap);
+            item.addEventListener('click', () => setActiveTipConversation(summary.peer));
+            container.appendChild(item);
+        });
+    }
+
+    function ensureActiveTipPeer() {
+        if (!tipChatState.summaries.length) return;
+        const current = tipChatState.activePeer;
+        if (current && tipChatState.conversationMap.has(current)) return;
+        const fallback = tipChatState.summaries.find(summary => tipChatState.conversationMap.has(summary.peer))
+            || tipChatState.summaries[0];
+        tipChatState.activePeer = fallback?.peer || null;
+    }
+
+    function getVisibleCount(peer, total) {
+        if (!peer) return 0;
+        const stored = tipChatState.visibleCountMap.get(peer);
+        const fallback = Math.min(TIP_CHAT_INITIAL_LOAD, total);
+        return Math.min(total, stored || fallback || 0);
+    }
+
+    function setVisibleCount(peer, count) {
+        if (!peer) return;
+        tipChatState.visibleCountMap.set(peer, count);
+    }
+
+    function renderTipThread(options = {}) {
+        const container = tipChatState.elements.threadList;
+        const titleEl = tipChatState.elements.threadTitle;
+        const metaEl = tipChatState.elements.threadMeta;
+        updateTipComposerState();
+        if (!container) return;
+        const peer = tipChatState.activePeer;
+        if (!peer || !tipChatState.conversationMap.has(peer)) {
+            const prevPeer = peer;
+            ensureActiveTipPeer();
+            if (tipChatState.activePeer && tipChatState.activePeer !== prevPeer && tipChatState.conversationMap.has(tipChatState.activePeer)) {
+                renderTipThread(options);
+                return;
+            }
+            container.innerHTML = '';
+            if (!tipChatState.summaries.length && needsTipChatBootstrap()) {
+                container.appendChild(createTipChatBootstrapCallout({
+                    className: 'tip-chat-empty',
+                    message: '首次使用需要同步全部打赏记录，点击按钮立即同步。'
+                }));
+                if (metaEl) metaEl.textContent = '尚无记录';
+                if (titleEl) titleEl.textContent = '打赏会话';
+            } else if (!tipChatState.summaries.length) {
+                container.innerHTML = '<div class="tip-chat-empty">暂无消息</div>';
+                if (metaEl) metaEl.textContent = '尚无记录';
+                if (titleEl) titleEl.textContent = '打赏会话';
+            } else {
+                container.innerHTML = '<div class="tip-chat-empty">选择会话以查看消息</div>';
+                if (titleEl) titleEl.textContent = '选择会话';
+                if (metaEl) metaEl.textContent = '最近 30 条消息';
+            }
+            updateTipComposerState({ preserveStatus: false });
+            return;
+        }
+        if (titleEl) titleEl.textContent = `@${peer}`;
+        const records = tipChatState.conversationMap.get(peer) || [];
+        const total = records.length;
+        const visibleCount = getVisibleCount(peer, total);
+        if (metaEl) metaEl.textContent = `共 ${total} 条 · 正在显示最近 ${visibleCount} 条`;
+        const startIndex = Math.max(0, total - visibleCount);
+        const fragment = document.createDocumentFragment();
+        if (startIndex > 0) {
+            const hint = document.createElement('div');
+            hint.className = 'tip-chat-thread-hint';
+            hint.textContent = '上拉加载更多历史';
+            fragment.appendChild(hint);
+        }
+        const me = resolveTipChatCurrentUser();
+        for (let i = startIndex; i < total; i++) {
+            const record = records[i];
+            const row = document.createElement('div');
+            const outgoing = record.from === me;
+            row.className = `tip-chat-message ${outgoing ? 'outgoing' : 'incoming'}`;
+
+            const avatarOwner = outgoing ? me : (record.from || peer);
+            const avatarUrl = record.fromAvatar || resolveAvatarForUser(avatarOwner, tipChatState.records);
+            const avatarWrap = document.createElement('div');
+            avatarWrap.className = 'tip-chat-message-avatar';
+            if (avatarUrl) {
+                const img = document.createElement('img');
+                img.src = avatarUrl;
+                img.alt = avatarOwner || '';
+                avatarWrap.appendChild(img);
+            } else {
+                avatarWrap.textContent = (avatarOwner || '?').slice(0, 1).toUpperCase();
+            }
+
+            const contentWrap = document.createElement('div');
+            contentWrap.className = 'tip-chat-message-content';
+            const meta = document.createElement('div');
+            meta.className = 'tip-chat-message-meta';
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = outgoing ? '我' : `@${record.from || peer || '?'}`;
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = formatAbsoluteTime(record.timestamp);
+            meta.appendChild(nameSpan);
+            meta.appendChild(timeSpan);
+
+            const bubble = document.createElement('div');
+            bubble.className = 'tip-chat-message-bubble';
+            bubble.innerHTML = escapeHtmlText(formatMessageBody(record) || '');
+
+            contentWrap.appendChild(meta);
+            contentWrap.appendChild(bubble);
+            row.appendChild(avatarWrap);
+            row.appendChild(contentWrap);
+            fragment.appendChild(row);
+        }
+        const previousHeight = options.previousHeight || container.scrollHeight;
+        container.innerHTML = '';
+        container.appendChild(fragment);
+        if (options.preserveScroll) {
+            const diff = container.scrollHeight - previousHeight;
+            container.scrollTop = diff > 0 ? diff : 0;
+        } else if (!tipChatState.userScrolledUp) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    function updateTipComposerState({ message, preserveStatus = true } = {}) {
+        const input = tipChatState.elements.composerInput;
+        const sendBtn = tipChatState.elements.composerSendBtn;
+        const statusEl = tipChatState.elements.composerStatus;
+        const hasPeer = Boolean(tipChatState.activePeer);
+        if (input) {
+            input.disabled = !hasPeer || tipChatState.composerSending;
+            input.placeholder = hasPeer ? `对 @${tipChatState.activePeer} 说点什么...` : '选择会话以发送私信';
+        }
+        if (sendBtn) {
+            if (tipChatState.composerSending) {
+                sendBtn.disabled = true;
+                sendBtn.textContent = '发送中...';
+            } else {
+                sendBtn.disabled = !hasPeer;
+                sendBtn.textContent = '发送';
+            }
+        }
+        if (statusEl) {
+            if (typeof message === 'string') {
+                statusEl.textContent = message;
+            } else if (!preserveStatus || !statusEl.textContent) {
+                statusEl.textContent = hasPeer ? '发送将自动附带 1 $V2EX' : '选择会话以发送私信';
+            }
+        }
+    }
+
+    async function handleTipChatComposerSend() {
+        const input = tipChatState.elements.composerInput;
+        if (!input) return;
+        const peer = tipChatState.activePeer;
+        if (!peer) {
+            updateTipComposerState({ message: '请选择会话以发送私信', preserveStatus: false });
+            return;
+        }
+        const text = (input.value || '').trim();
+        if (!text || text.length < 3) {
+            updateTipComposerState({ message: '请至少输入 3 个字符', preserveStatus: true });
+            return;
+        }
+        const me = resolveTipChatCurrentUser();
+        if (!me) {
+            updateTipComposerState({ message: '未获取到当前用户，请刷新页面后重试', preserveStatus: false });
+            return;
+        }
+        tipChatState.composerSending = true;
+        updateTipComposerState({ message: '准备钱包...', preserveStatus: true });
+        try {
+            const address = await getUserAddress(peer);
+            if (!address) {
+                throw new Error('对方未绑定地址，无法发送');
+            }
+            const { signature, memo } = await sendDmMessage({
+                username: peer,
+                address,
+                text,
+                onStatus: (msg) => updateTipComposerState({ message: msg, preserveStatus: true })
+            });
+            input.value = '';
+            const meAvatar = resolveAvatarForUser(me, tipChatState.records) || findInlineAvatarForUsername(me) || null;
+            if (meAvatar) {
+                memberAvatarCache.set(me, meAvatar);
+            }
+            appendLocalTipChatRecord({
+                id: signature || `local-${Date.now()}`,
+                signature,
+                from: me,
+                to: peer,
+                memo,
+                token: 'v2ex',
+                amount: MESSAGE_COST,
+                timestamp: Date.now(),
+                fromAvatar: meAvatar
+            });
+            updateTipComposerState({ message: '私信已发送并记录', preserveStatus: true });
+        } catch (err) {
+            console.error('私信发送失败', err);
+            updateTipComposerState({ message: err.message || '发送失败', preserveStatus: true });
+        } finally {
+            tipChatState.composerSending = false;
+            updateTipComposerState();
+        }
+    }
+
+    function appendLocalTipChatRecord(record) {
+        if (!record) return;
+        const normalized = { ...record };
+        if (!normalized.id) {
+            normalized.id = `local-${Date.now()}`;
+        }
+        if (!normalized.timestamp) {
+            normalized.timestamp = Date.now();
+        }
+        const nextRecords = Array.isArray(tipChatState.records) ? [...tipChatState.records, normalized] : [normalized];
+        const trimmed = trimTipRecords(nextRecords);
+        tipChatState.records = trimmed;
+        saveTipChatRecords(trimmed);
+        rebuildTipConversationMap();
+        tipChatState.summaries = getConversationSummaries();
+        const meta = loadTipChatMeta();
+        const nextMeta = {
+            latestId: normalized.id || meta.latestId || null,
+            lastSeenId: normalized.id || meta.lastSeenId || null,
+            updatedAt: Date.now()
+        };
+        saveTipChatMeta(nextMeta);
+        updateLauncherBadge(false);
+        renderTipConversationList();
+        renderTipThread();
+    }
+
+    function setActiveTipConversation(peer) {
+        if (!peer) return;
+        tipChatState.activePeer = peer;
+        if (!tipChatState.visibleCountMap.has(peer)) {
+            const total = tipChatState.conversationMap.get(peer)?.length || 0;
+            tipChatState.visibleCountMap.set(peer, Math.min(TIP_CHAT_INITIAL_LOAD, total));
+        }
+        ensureAvatarForPeer(peer);
+        tipChatState.userScrolledUp = false;
+        renderTipConversationList();
+        renderTipThread();
+    }
+
+    function handleTipChatScroll() {
+        const container = tipChatState.elements.threadList;
+        if (!container || !tipChatState.activePeer) return;
+        if (container.scrollTop <= 12) {
+            const records = tipChatState.conversationMap.get(tipChatState.activePeer) || [];
+            const currentCount = getVisibleCount(tipChatState.activePeer, records.length);
+            if (records.length > currentCount) {
+                const previousHeight = container.scrollHeight;
+                const nextCount = Math.min(records.length, currentCount + TIP_CHAT_LOAD_STEP);
+                setVisibleCount(tipChatState.activePeer, nextCount);
+                renderTipThread({ preserveScroll: true, previousHeight });
+            }
+        }
+        tipChatState.userScrolledUp = container.scrollTop + container.clientHeight < container.scrollHeight - 40;
+    }
+
+    function updateRefreshUI(isLoading) {
+        const btn = tipChatState.elements.refreshBtn;
+        if (!btn) return;
+        btn.classList.toggle('loading', Boolean(isLoading));
+        btn.disabled = Boolean(isLoading);
+        btn.textContent = isLoading ? '…' : '⟳';
+    }
+
+    function scheduleTipChatRefresh() {
+        if (tipChatState.refreshTimer) {
+            clearInterval(tipChatState.refreshTimer);
+        }
+        tipChatState.refreshTimer = setInterval(() => {
+            refreshTipChatData({ forceFull: false });
+        }, TIP_CHAT_REFRESH_INTERVAL);
+    }
+
+    async function refreshTipChatData({ forceFull = false, repair = false } = {}) {
+        // 在拉取远端数据前先尝试从本地存储同步，避免因跨标签页写入导致的缺失
+        syncTipChatStateFromStorage();
+        if (!forceFull && needsTipChatBootstrap()) {
+            return;
+        }
+        if (tipChatState.refreshing) return tipChatState.refreshing;
+        const meta = loadTipChatMeta();
+        let stopId = forceFull ? null : meta.latestId;
+        let maxPages = stopId ? TIP_CHAT_INCREMENTAL_PAGES : TIP_CHAT_MAX_BOOTSTRAP_PAGES;
+        if (repair && !forceFull) {
+            stopId = null;
+            maxPages = Math.min(TIP_CHAT_REPAIR_PAGES, TIP_CHAT_MAX_BOOTSTRAP_PAGES);
+        }
+        updateRefreshUI(true);
+        const refreshPromise = (async () => {
+            const freshRecords = await fetchTipRecords({ stopId, maxPages });
+            if (!freshRecords.length) {
+                return;
+            }
+            const merged = mergeTipRecords(tipChatState.records, freshRecords);
+            const trimmed = trimTipRecords(merged);
+            tipChatState.records = trimmed;
+            saveTipChatRecords(trimmed);
+            rebuildTipConversationMap();
+            tipChatState.summaries = getConversationSummaries();
+            const newest = trimmed[trimmed.length - 1];
+            const nextMeta = {
+                latestId: newest?.id || meta.latestId || null,
+                lastSeenId: isTipChatPanelOpen() ? newest?.id || null : meta.lastSeenId || null,
+                updatedAt: Date.now()
+            };
+            saveTipChatMeta(nextMeta);
+            updateLauncherBadge(Boolean(nextMeta.latestId && nextMeta.lastSeenId !== nextMeta.latestId));
+            renderTipConversationList();
+            renderTipThread();
+        })().catch((err) => {
+            console.warn('刷新打赏记录失败', err);
+        }).finally(() => {
+            tipChatState.refreshing = null;
+            updateRefreshUI(false);
+        });
+        tipChatState.refreshing = refreshPromise;
+        return refreshPromise;
+    }
+
+    function extractMaxPageNumber(doc) {
+        if (!doc) return null;
+        const input = doc.querySelector('.page_input');
+        if (input) {
+            const maxAttr = parseInt(input.getAttribute('max'), 10);
+            if (!Number.isNaN(maxAttr)) {
+                return maxAttr;
+            }
+        }
+        let maxPage = null;
+        doc.querySelectorAll('a.page_normal, a.page_current').forEach((link) => {
+            const text = link.textContent?.trim();
+            const num = parseInt(text, 10);
+            if (!Number.isNaN(num)) {
+                maxPage = maxPage === null ? num : Math.max(maxPage, num);
+            }
+        });
+        return maxPage;
+    }
+
+    async function fetchTipRecords({ stopId, maxPages }) {
+        const collected = [];
+        let reachedStop = false;
+        let dynamicMaxPages = maxPages;
+        for (let page = 1; page <= dynamicMaxPages; page++) {
+            const { records, hasMore, totalPages } = await fetchTipPage(page);
+            if (typeof totalPages === 'number' && totalPages > 0) {
+                dynamicMaxPages = Math.min(dynamicMaxPages, totalPages);
+            }
+            if (!records.length) break;
+            for (const record of records) {
+                if (stopId && record.id === stopId) {
+                    reachedStop = true;
+                    break;
+                }
+                collected.push(record);
+                if (!stopId && collected.length >= TIP_CHAT_RECORD_LIMIT) {
+                    break;
+                }
+            }
+            if (reachedStop || !hasMore || (!stopId && collected.length >= TIP_CHAT_RECORD_LIMIT)) break;
+        }
+        return collected;
+    }
+
+    async function fetchTipPage(page = 1) {
+        const params = new URLSearchParams();
+        if (page > 1) {
+            params.set('p', page);
+        }
+        params.set('view', 'all');
+        const query = params.toString();
+        const baseUrl = `${window.location.origin}/solana/tips`;
+        const response = await gmFetch(query ? `${baseUrl}?${query}` : baseUrl);
+        if (!response.ok) {
+            throw new Error('获取打赏记录失败');
+        }
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const records = parseTipRecordsFromDoc(doc);
+        const totalPages = extractMaxPageNumber(doc);
+        const hasMore = typeof totalPages === 'number' ? page < totalPages : records.length > 0;
+        return { records, hasMore, totalPages };
+    }
+
+    function parseTipRecordsFromDoc(doc) {
+        const results = [];
+        if (!doc) return results;
+        let me = resolveTipChatCurrentUser();
+        if (!me) {
+            me = getUsernameFromDocument(doc);
+            if (me) {
+                saveTipChatSelf(me);
+            }
+        }
+        const rows = doc.querySelectorAll('#Main .cell.flex-one-row');
+        rows.forEach((row) => {
+            const signatureLink = row.querySelector('a[href*="solscan.io/tx"]');
+            if (!signatureLink) return;
+            const id = extractSignatureId(signatureLink) || signatureLink.getAttribute('href') || signatureLink.href;
+            if (!id) return;
+            const textContainer = row.querySelector('div[style*="flex: 1"]') || row.querySelector('.flex-one-row > div:nth-child(2)') || row.children[1];
+            if (!textContainer) return;
+            const summaryText = (textContainer.textContent || '').trim();
+            const memberLinks = Array.from(textContainer.querySelectorAll('a[href^="/member/"]'))
+                .filter(link => !link.closest('.payload, .tip-memo, .memo, .item_content, .markdown_body, .message, .topic_content'));
+            let counterpart = null;
+            let counterpartLink = null;
+            for (const link of memberLinks) {
+                const username = normalizeUsernameFromHref(link?.getAttribute('href'));
+                if (username && username !== me) {
+                    counterpart = username;
+                    counterpartLink = link;
+                    break;
+                }
+            }
+            if (!counterpart && memberLinks.length) {
+                counterpartLink = memberLinks[0];
+                counterpart = normalizeUsernameFromHref(counterpartLink?.getAttribute('href'));
+            }
+            if (!counterpart) return;
+            const amountSpan = textContainer.querySelector('span[style*="var(--code-font)"]');
+            let amount = amountSpan ? parseFloat(amountSpan.textContent.replace(/,/g, '')) : null;
+            if (!Number.isFinite(amount)) {
+                amount = null;
+            }
+            const tokenText = (amountSpan?.nextElementSibling?.textContent || '').trim();
+            const token = /sol/i.test(tokenText) ? 'sol' : 'v2ex';
+            const timeSpan = textContainer.querySelector('.small.fade');
+            const timeLabel = timeSpan?.getAttribute('title')?.trim() || timeSpan?.textContent?.trim() || '';
+            const timestamp = parseRelativeTimeLabel(timeLabel);
+            const memoEl = row.querySelector('.payload, .tip-memo, .memo, .item_content, .markdown_body, .message, .topic_content');
+            const memo = memoEl ? memoEl.textContent.trim() : '';
+            const avatarImg = counterpartLink?.querySelector('img.avatar') || row.querySelector('img.avatar');
+            const avatarSrc = avatarImg?.src || null;
+            let from = null;
+            let to = null;
+            let fromAvatar = null;
+            let toAvatar = null;
+            if (/收到来自/.test(summaryText)) {
+                from = counterpart;
+                to = me;
+                fromAvatar = avatarSrc;
+            } else if (/向\s+/.test(summaryText) && /发送了/.test(summaryText)) {
+                from = me;
+                to = counterpart;
+                fromAvatar = avatarSrc;
+            } else if (/收到/.test(summaryText) && !/发送/.test(summaryText)) {
+                from = counterpart;
+                to = me;
+                fromAvatar = avatarSrc;
+            } else {
+                from = counterpart;
+                to = me;
+            }
+            if (from && fromAvatar) {
+                memberAvatarCache.set(from, fromAvatar);
+            }
+            if (to && toAvatar) {
+                memberAvatarCache.set(to, toAvatar);
+            }
+            results.push({
+                id,
+                signature: signatureLink.getAttribute('href') || signatureLink.href,
+                from,
+                to,
+                memo,
+                amount,
+                token,
+                timestamp,
+                timeLabel,
+                fromAvatar,
+                toAvatar
+            });
+        });
+        return results;
+    }
+
+    function initTipChat() {
+        if (tipChatInitialized) return;
+        const currentUser = resolveTipChatCurrentUser();
+        if (!currentUser) return;
+        createTipChatUIIfNeeded();
+        tipChatState.records = loadTipChatRecords();
+        rebuildTipConversationMap();
+        tipChatState.summaries = getConversationSummaries();
+        tipChatInitialized = true;
+        const meta = loadTipChatMeta();
+        updateLauncherBadge(Boolean(meta.latestId && meta.lastSeenId !== meta.latestId));
+        renderTipConversationList();
+        renderTipThread();
+        scheduleTipChatRefresh();
+        if (meta.latestId) {
+            refreshTipChatData({ forceFull: false }).catch(() => {});
+        }
+    }
+
     function createInlineDmButton({ username, targetId, fallbackAddress }) {
         if (targetId && document.getElementById(targetId)) return null;
         const btn = document.createElement('a');
@@ -1874,12 +3750,15 @@
         addTipButtons();
         addDmButtons();
         initQuickThank();
+        initTipChat();
+        scheduleScriptUpdateCheck();
         
         // 监听DOM变化（如果页面动态加载内容）
         const observer = new MutationObserver(() => {
             addTipButtons();
             addDmButtons();
             quickThankCheckAndInsert();
+            initTipChat();
         });
         
         observer.observe(document.body, {
