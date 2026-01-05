@@ -7,24 +7,14 @@
 	- 适用页面：[https://www.v2ex.com/planet](https://www.v2ex.com/planet)， [https://v2ex.com/planet](https://v2ex.com/planet)
 	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/planet-follow-button.user.js)
 
-- **V2EX 回复打赏功能**：为 V2EX 主题回复添加打赏功能，支持使用 $V2EX 和 Solana 打赏。
-	- 适用页面：`https://www.v2ex.com/t/*`，`https://*.v2ex.com/t/*`
-	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/v2ex-tip-script.user.js)
-	- 本仓库文件：`v2ex-tip-script.user.js`
+- **V2EX 打赏 + 私信 + 快速感谢**：为 V2EX 主题与 Planet 添加打赏（$V2EX / SOL）、1 $V2EX 私信、以及打赏者“一键感谢”填充/可选自动提交。
+	- 适用页面：`https://www.v2ex.com/t/*`，`https://*.v2ex.com/t/*`，Planet 列表与评论页
+	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/v2ex-scene-script.user.js)
+	- 本仓库文件：`v2ex-scene-script.user.js`
 
-- **V2EX 快速感谢打赏者**：在 V2EX 话题页面快速感谢打赏过你的用户，一键填充回复框并可选择自动提交。
-	- 适用页面：`https://www.v2ex.com/t/*`，本地测试页面：`target/topic.html`（file 协议）
-	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/topic-quick-thank.user.js)
-	- 本仓库文件：`topic-quick-thank.user.js`
-	- 使用说明：
-	  1. 安装 Tampermonkey 扩展并从仓库或本地安装 `topic-quick-thank.user.js`。
-	  2. 打开一个 V2EX 话题页面（且你有回复权限），在打赏者列表旁会出现“感谢所有打赏者”按钮。
-	  3. 点击该按钮会将 `@用户` 列表填入回复框。脚本默认不会自动提交，避免误操作。可切换“自动提交”按钮以开启/关闭自动提交功能。
-	  4. 自动提交会触发页面的提交按钮或直接提交表单，请谨慎开启。
-
-	- 风险与建议：
-	  - 自动提交有可能造成误发或重复发送，首次使用请保持默认关闭并手动确认内容后提交。
-	  - 脚本基于页面结构进行选择器查找，如页面改版可能需要更新脚本。
+- **快速感谢打赏者（已并入上方脚本）**：原独立脚本 `topic-quick-thank.user.js` 的功能已整合进 `v2ex-scene-script.user.js`，仍可用于本地 `target/topic.html` 测试。
+		- 使用方式：安装/更新 `v2ex-scene-script.user.js` 后，在话题打赏列表旁出现“感谢所有打赏者”“单独感谢”按钮；默认不自动提交，可切换按钮开启自动提交。
+		- 风险提示：自动提交可能误发，建议先保持关闭并人工检查内容。
 
 
 > 更多脚本将持续更新，欢迎关注和提出建议！

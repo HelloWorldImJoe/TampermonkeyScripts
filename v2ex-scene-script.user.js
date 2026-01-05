@@ -1,18 +1,15 @@
 // ==UserScript==
-// @name         V2EX 回复打赏功能
+// @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
-// @description  为V2EX主题回复添加打赏功能，支持使用$V2EX和Solana打赏
+// @version      1.1.0
+// @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
-// @match        https://www.v2ex.com/t/*
-// @match        https://*.v2ex.com/t/*
-// @match        https://www.v2ex.com/planet/*
-// @match        https://www.v2ex.com/planet
-// @match        https://*.v2ex.com/planet/*
-// @match        https://*.v2ex.com/planet
+// @match        https://www.v2ex.com/*
+// @match        https://*.v2ex.com/*
 // @icon         https://www.v2ex.com/static/icon-192.png
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
 // @connect      www.v2ex.com
 // @connect      jillian-fnk7b6-fast-mainnet.helius-rpc.com
 // ==/UserScript==
@@ -35,21 +32,19 @@
 
         .tip-button {
             cursor: pointer;
-            color: var(--tip-button-color);
-            margin-left: 0px;
+            color: var(--dm-accent, #3b82f6);
+            margin-left: 6px;
             font-size: 12px;
             font-weight: 600;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 12px;
-            height: 12px;
-            padding: 0;
-            border: 1px solid transparent;
-            border-radius: 2px;
-            background: transparent;
-            line-height: 1;
+            padding: 2px 6px;
+            border: 1px solid rgba(59, 130, 246, 0.45);
+            border-radius: 3px;
+            background: rgba(59, 130, 246, 0.08);
+            line-height: 1.2;
             position: relative;
             transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
         }
@@ -73,9 +68,9 @@
         }
 
         .tip-button:hover {
-            color: var(--tip-button-color);
-            background: var(--tip-button-hover-bg);
-            border-color: var(--tip-button-hover-border);
+            color: var(--dm-accent, #3b82f6);
+            background: rgba(59, 130, 246, 0.18);
+            border-color: rgba(59, 130, 246, 0.65);
         }
 
         .tip-button.loading {
@@ -355,16 +350,132 @@
         .tip-postscript-input::placeholder {
             color: #6b7280;
         }
+
+        /* DM UI */
+        :root {
+            --dm-accent: #3b82f6;
+            --dm-bg: #0f172a;
+            --dm-text: #e5e7eb;
+            --dm-muted: #9ca3af;
+        }
+        .dm-btn {
+            cursor: pointer;
+            color: var(--dm-accent);
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(59,130,246,0.45);
+            background: rgba(59,130,246,0.08);
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 6px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .dm-btn:hover { background: rgba(59,130,246,0.18); }
+        .dm-btn.loading { opacity: 0.6; pointer-events: none; }
+
+        #dm-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.72);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .dm-modal {
+            width: 460px;
+            max-width: 88vw;
+            background: #111827;
+            color: var(--dm-text);
+            border-radius: 12px;
+            box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+            overflow: hidden;
+        }
+        .dm-head {
+            padding: 16px 18px;
+            background: #0b1220;
+            border-bottom: 1px solid #1f2937;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dm-body { padding: 18px; }
+        .dm-field label { color: var(--dm-muted); font-size: 13px; display: block; margin-bottom: 8px; }
+        .dm-field textarea {
+            width: 100%;
+            min-height: 90px;
+            box-sizing: border-box;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #1f2937;
+            background: #0f172a;
+            color: var(--dm-text);
+            resize: vertical;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+        .dm-field textarea:focus { border-color: var(--dm-accent); }
+        .dm-foot {
+            padding: 14px 18px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid #1f2937;
+        }
+        .dm-actions { margin-left: auto; display: flex; gap: 10px; }
+        .dm-btn-ghost, .dm-btn-primary {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dm-btn-ghost { background: #1f2937; color: var(--dm-text); }
+        .dm-btn-ghost:hover { background: #273248; }
+        .dm-btn-primary { background: var(--dm-accent); color: #fff; }
+        .dm-btn-primary[disabled] { opacity: 0.6; cursor: not-allowed; }
+        .dm-status { color: var(--dm-muted); font-size: 12px; }
+
+        /* Quick Thank */
+        .quick-thank-btn { cursor: pointer; }
+        .quick-thank-modal {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #222;
+            color: #fff;
+            padding: 12px;
+            border-radius: 6px;
+            z-index: 99999;
+            min-width: 280px;
+        }
+        .quick-thank-modal input[type=checkbox] { margin-right: 6px; }
+        .quick-thank-modal .actions { margin-top: 10px; text-align: right; }
     `);
 
     const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
     const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
     const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
+    const V2EX_MINT = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
+    const MESSAGE_COST = 1;
 
     // 用户地址缓存
     const addressCache = new Map();
     const planetOwnerCache = new Map();
     const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
+    const QUICK_THANK_AUTO_SUBMIT = false;
+    const QUICK_THANK_TEMPLATE = (names) => `感谢 ${names.join(' ')} 的打赏！🎉\n`;
+    const QUICK_THANK_STORAGE_KEY = 'quick-thank-thanked-users-v1';
+    let dmModalEl = null;
+    let quickThankInitialized = false;
 
     // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
     function gmFetch(url, options = {}) {
@@ -429,37 +540,56 @@
         await loadScriptOnce(SPL_TOKEN_CDN, () => typeof splToken !== 'undefined');
     }
 
+    function isSolAddress(addr) {
+        return typeof addr === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr.trim());
+    }
+
     // 获取用户的Solana地址
-    async function getUserAddress(username) {
-        // 检查缓存
+    async function getUserAddress(username, options = {}) {
+        const { fallbackAddress } = options;
         if (addressCache.has(username)) {
             return addressCache.get(username);
         }
+
+        const fallback = isSolAddress(fallbackAddress) ? fallbackAddress.trim() : null;
+        if (fallback) {
+            addressCache.set(username, fallback);
+            return fallback;
+        }
+
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: `${window.location.origin}/member/${username}`,
                 onload: function(response) {
                     if (response.status === 200) {
-                        // 解析HTML查找address变量
                         const match = response.responseText.match(/const address = "([^"]+)";/);
-                        if (match && match[1]) {
-                            const address = match[1];
-                            addressCache.set(username, address);
-                            resolve(address);
-                        } else {
-                            addressCache.set(username, null);
-                            resolve(null);
-                        }
+                        const address = match ? match[1] : null;
+                        const finalAddr = isSolAddress(address) ? address : fallback;
+                        addressCache.set(username, finalAddr);
+                        resolve(finalAddr);
                     } else {
                         reject(new Error('获取用户信息失败'));
                     }
                 },
                 onerror: function() {
+                    if (fallback) {
+                        addressCache.set(username, fallback);
+                        resolve(fallback);
+                        return;
+                    }
                     reject(new Error('网络请求失败'));
                 }
             });
         });
+    }
+
+    function getTopicAuthorInfo() {
+        const authorLink = document.querySelector('.header small.gray a[href^="/member/"]');
+        const username = authorLink ? authorLink.textContent.trim() : null;
+        const pageAddress = typeof window.address === 'string' ? window.address.trim() : null;
+        const address = isSolAddress(pageAddress) ? pageAddress : null;
+        return { username, address };
     }
 
     // 获取 Planet 站点的作者 V2EX 用户名
@@ -729,7 +859,7 @@
             // 根据选择的token确定mint地址
             let mintAddress;
             if (selectedToken === 'v2ex') {
-                mintAddress = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump'; // $V2EX token
+                mintAddress = V2EX_MINT; // $V2EX token
             } else {
                 mintAddress = 'So11111111111111111111111111111111111111112'; // SOL
             }
@@ -925,6 +1055,190 @@
         return response;
     }
 
+    function createDmModal() {
+        const overlay = document.createElement('div');
+        overlay.id = 'dm-overlay';
+        overlay.innerHTML = `
+            <div class="dm-modal">
+                <div class="dm-head">发私信 · <span id="dm-target"></span> · 1 $V2EX</div>
+                <div class="dm-body">
+                    <div class="dm-field">
+                        <label>消息内容（自动随附 1 $V2EX）</label>
+                        <textarea id="dm-content" maxlength="500" placeholder="写下想对 TA 说的话..."></textarea>
+                    </div>
+                </div>
+                <div class="dm-foot">
+                    <div class="dm-status" id="dm-status">Phantom 将弹出确认支付 1 $V2EX</div>
+                    <div class="dm-actions">
+                        <button class="dm-btn-ghost" id="dm-cancel">取消</button>
+                        <button class="dm-btn-primary" id="dm-send">发送私信</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeDmModal();
+        });
+        overlay.querySelector('#dm-cancel').addEventListener('click', closeDmModal);
+        return overlay;
+    }
+
+    function openDmModal(username, address) {
+        if (!dmModalEl) dmModalEl = createDmModal();
+        dmModalEl.style.display = 'flex';
+        const targetEl = dmModalEl.querySelector('#dm-target');
+        targetEl.textContent = `@${username}`;
+        const statusEl = dmModalEl.querySelector('#dm-status');
+        statusEl.textContent = 'Phantom 将弹出确认支付 1 $V2EX';
+        const sendBtn = dmModalEl.querySelector('#dm-send');
+        const contentEl = dmModalEl.querySelector('#dm-content');
+        sendBtn.disabled = false;
+        sendBtn.textContent = '发送私信';
+        contentEl.value = '';
+        sendBtn.onclick = () => handleDmSend({ username, address, contentEl, sendBtn, statusEl });
+    }
+
+    function closeDmModal() {
+        if (dmModalEl) dmModalEl.style.display = 'none';
+    }
+
+    async function handleDmSend({ username, address, contentEl, sendBtn, statusEl }) {
+        const text = (contentEl.value || '').trim();
+        if (!text || text.length < 3) {
+            statusEl.textContent = '请至少输入 3 个字符';
+            return;
+        }
+
+        try {
+            sendBtn.disabled = true;
+            statusEl.textContent = '准备钱包...';
+            await ensureSolanaLibraries();
+            if (!window.solana || !window.solana.isPhantom) {
+                throw new Error('请安装并解锁 Phantom 钱包');
+            }
+            await ensurePhantomConnected();
+            if (!window.solana.isConnected) {
+                await window.solana.connect();
+            }
+            const from = window.solana.publicKey?.toString();
+            if (!from) throw new Error('未获取到钱包地址');
+
+            const tx = await buildTransaction(from, address, MESSAGE_COST, V2EX_MINT);
+            statusEl.textContent = '等待钱包签名...';
+            const { signature } = await window.solana.signAndSendTransaction(tx);
+            statusEl.textContent = '链上确认中...';
+            await waitForTransaction(signature);
+
+            const memo = `${text}`.slice(0, 180);
+            await submitMessageRecord({ signature, amount: MESSAGE_COST, memo, to: username });
+            statusEl.textContent = '私信已发送并记录';
+            setTimeout(() => {
+                closeDmModal();
+                window.open(`${window.location.origin}/solana/tips`, '_blank');
+            }, 1200);
+        } catch (err) {
+            console.error('私信发送失败', err);
+            statusEl.textContent = err.message || '私信发送失败';
+            sendBtn.disabled = false;
+        }
+    }
+
+    async function submitMessageRecord({ signature, amount, memo, to }) {
+        const payload = { tx: signature, amount, memo, token: 'v2ex', to };
+        const endpoints = ['/solana/message', '/solana/tip'];
+        for (const ep of endpoints) {
+            try {
+                const res = await fetch(`${window.location.origin}${ep}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) return ep;
+            } catch (e) {
+                console.warn(`提交到 ${ep} 失败`, e);
+            }
+        }
+        throw new Error('链上转账成功，但私信记录提交失败');
+    }
+
+    function getProfileUsername() {
+        const match = window.location.pathname.match(/\/member\/([^\/\?#]+)/);
+        return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function addProfileDmButton() {
+        if (!window.location.pathname.startsWith('/member/')) return;
+        if (document.getElementById('dm-profile-btn')) return;
+        const actions = document.querySelector('#Main .box .cell .fr');
+        if (!actions) return;
+        const username = getProfileUsername();
+        if (!username) return;
+        const fallbackAddress = isSolAddress(window.address) ? window.address.trim() : null;
+
+        const btn = document.createElement('button');
+        btn.id = 'dm-profile-btn';
+        btn.className = 'super normal button';
+        btn.style.marginRight = '5px';
+        btn.textContent = '私信';
+        btn.title = `私信 @${username}`;
+
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            btn.disabled = true;
+            try {
+                const addr = await getUserAddress(username, { fallbackAddress });
+                if (!addr) throw new Error('对方未绑定 Solana 地址');
+                await ensurePhantomConnected();
+                openDmModal(username, addr);
+            } catch (err) {
+                alert(err.message || '无法发送私信');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        const firstChild = actions.firstElementChild;
+        actions.insertBefore(btn, firstChild || null);
+    }
+
+    function addTopicAuthorDmButton() {
+        if (document.getElementById('dm-topic-op')) return;
+        const tipBtn = document.getElementById('tip-button');
+        if (!tipBtn) return;
+
+        const { username, address } = getTopicAuthorInfo();
+        if (!username) return;
+
+        const dmBtn = document.createElement('a');
+        dmBtn.id = 'dm-topic-op';
+        dmBtn.href = '#';
+        dmBtn.className = tipBtn.className || 'super normal button';
+        dmBtn.style.marginLeft = '10px';
+        dmBtn.textContent = '私信';
+        dmBtn.title = `私信 @${username}`;
+
+        dmBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            dmBtn.classList.add('loading');
+            dmBtn.textContent = '...';
+            try {
+                const addr = await getUserAddress(username, { fallbackAddress: address });
+                if (!addr) throw new Error('对方未绑定 Solana 地址');
+                await ensurePhantomConnected();
+                openDmModal(username, addr);
+            } catch (err) {
+                alert(err.message || '无法发送私信');
+            } finally {
+                dmBtn.classList.remove('loading');
+                dmBtn.textContent = '私信';
+            }
+        });
+
+        tipBtn.parentElement.insertBefore(dmBtn, tipBtn.nextSibling);
+    }
+
     function getReplyBox() {
         return document.getElementById('reply_content') || document.querySelector('textarea[name="content"]');
     }
@@ -981,15 +1295,273 @@
         throw new Error('未找到可用的附言提交方式');
     }
 
-    // 为经典主题页的回复添加打赏按钮
-    function addTopicTipButtons() {
-        const replies = document.querySelectorAll('.cell[id^="r_"]');
-        
-        replies.forEach(reply => {
-            if (reply.querySelector('.tip-button')) {
+    function quickThankFindPatronage() {
+        const patronage = document.querySelector('#topic-tip-box .patronage');
+        if (patronage) return patronage;
+        return document.querySelector('.patronage');
+    }
+
+    function quickThankGetUsernamesFromPatronage(patronage) {
+        if (!patronage) return [];
+        const anchors = patronage.querySelectorAll('a[href^="/member/"]');
+        const names = [];
+        anchors.forEach((a) => {
+            const href = a.getAttribute('href');
+            const match = href.match(/^\/member\/(.+)$/);
+            if (match) names.push(match[1]);
+        });
+        return Array.from(new Set(names));
+    }
+
+    function quickThankCreateButton(text) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'super normal button quick-thank-btn';
+        btn.style.marginLeft = '8px';
+        btn.textContent = text;
+        return btn;
+    }
+
+    function quickThankFillReply(names) {
+        const ta = getReplyBox() || document.getElementById('reply_content') || document.querySelector('textarea[name="content"]') || document.querySelector('textarea');
+        if (!ta) {
+            alert('未找到回复框，请滚动到页面或在有回复权限的情况下使用此脚本。');
+            return;
+        }
+        const content = QUICK_THANK_TEMPLATE(names.map((n) => `@${n}`));
+        ta.focus();
+        ta.value = content;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function quickThankSubmitReply() {
+        const submit = getReplySubmitButton();
+        if (submit) {
+            submit.click();
+            return true;
+        }
+        const fallbackForm = document.querySelector('form[action^="/t/"]');
+        if (fallbackForm) {
+            fallbackForm.submit();
+            return true;
+        }
+        return false;
+    }
+
+    function quickThankLoadThanked() {
+        try {
+            const raw = localStorage.getItem(QUICK_THANK_STORAGE_KEY) || '[]';
+            return JSON.parse(raw);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function quickThankSaveThanked(arr) {
+        try {
+            localStorage.setItem(QUICK_THANK_STORAGE_KEY, JSON.stringify(Array.from(new Set(arr))));
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function quickThankMarkAsThanked(name) {
+        const cur = quickThankLoadThanked();
+        cur.push(name);
+        quickThankSaveThanked(cur);
+    }
+
+    function quickThankHasBeenThanked(name) {
+        const cur = quickThankLoadThanked();
+        return cur.indexOf(name) !== -1;
+    }
+
+    function quickThankClearThankedRecords() {
+        localStorage.removeItem(QUICK_THANK_STORAGE_KEY);
+    }
+
+    function quickThankOpenDialog(names, callback) {
+        const toShow = (names || []).filter((n) => !quickThankHasBeenThanked(n));
+        if (toShow.length === 0) {
+            alert('没有未感谢的用户');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'quick-thank-modal';
+
+        const title = document.createElement('div');
+        title.textContent = '选择要单独感谢的用户：';
+        modal.appendChild(title);
+
+        const list = document.createElement('div');
+        list.style.maxHeight = '240px';
+        list.style.overflow = 'auto';
+        list.style.marginTop = '8px';
+        toShow.forEach((n) => {
+            const row = document.createElement('div');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = n;
+            cb.id = `qt_cb_${n}`;
+            const lbl = document.createElement('label');
+            lbl.htmlFor = cb.id;
+            lbl.textContent = n;
+            lbl.style.marginLeft = '6px';
+            row.appendChild(cb);
+            row.appendChild(lbl);
+            list.appendChild(row);
+        });
+        modal.appendChild(list);
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const ok = document.createElement('button');
+        ok.textContent = '确认';
+        ok.className = 'super normal button';
+        const cancel = document.createElement('button');
+        cancel.textContent = '取消';
+        cancel.className = 'super normal button';
+        ok.style.marginRight = '8px';
+        actions.appendChild(ok);
+        actions.appendChild(cancel);
+        modal.appendChild(actions);
+
+        document.body.appendChild(modal);
+
+        cancel.addEventListener('click', () => modal.remove());
+        ok.addEventListener('click', () => {
+            const checked = Array.from(modal.querySelectorAll('input[type=checkbox]:checked')).map((i) => i.value);
+            modal.remove();
+            callback(checked);
+        });
+    }
+
+    function quickThankInsertControls() {
+        const patronage = quickThankFindPatronage();
+        if (!patronage) return;
+        if (document.querySelector('.quick-thank-controls')) return;
+
+        const container = document.createElement('div');
+        container.className = 'quick-thank-controls';
+        container.style.display = 'block';
+        container.style.marginTop = '8px';
+        container.style.marginLeft = '0';
+
+        const allBtn = quickThankCreateButton('感谢所有打赏者');
+        const autoToggle = quickThankCreateButton('开启自动提交');
+        autoToggle.dataset.enabled = QUICK_THANK_AUTO_SUBMIT ? '1' : '0';
+        autoToggle.textContent = QUICK_THANK_AUTO_SUBMIT ? '自动提交：已开' : '自动提交：已关';
+
+        allBtn.addEventListener('click', () => {
+            const names = quickThankGetUsernamesFromPatronage(patronage);
+            if (names.length === 0) {
+                alert('未检测到任何打赏者用户名');
                 return;
             }
+            quickThankFillReply(names);
+            if (autoToggle.dataset.enabled === '1') {
+                const ok = quickThankSubmitReply();
+                if (!ok) alert('自动提交失败，请手动点击提交');
+            }
+        });
 
+        autoToggle.addEventListener('click', () => {
+            const enabled = autoToggle.dataset.enabled === '1';
+            autoToggle.dataset.enabled = enabled ? '0' : '1';
+            autoToggle.textContent = autoToggle.dataset.enabled === '1' ? '自动提交：已开' : '自动提交：已关';
+        });
+
+        container.appendChild(allBtn);
+        container.appendChild(autoToggle);
+
+        const names = quickThankGetUsernamesFromPatronage(patronage);
+        const unthanked = names.filter((n) => !quickThankHasBeenThanked(n));
+        const singleThanksBtn = quickThankCreateButton('单独感谢');
+        singleThanksBtn.style.marginLeft = '12px';
+        singleThanksBtn.addEventListener('click', () => {
+            quickThankOpenDialog(unthanked, (selected) => {
+                if (!selected || selected.length === 0) return;
+                quickThankFillReply(selected);
+                selected.forEach((s) => quickThankMarkAsThanked(s));
+                if (autoToggle.dataset.enabled === '1') quickThankSubmitReply();
+            });
+        });
+        container.appendChild(singleThanksBtn);
+
+        const tipBox = patronage.closest('#topic-tip-box') || patronage.closest('.box');
+        if (tipBox) {
+            tipBox.appendChild(container);
+        } else if (patronage.parentNode) {
+            patronage.parentNode.insertBefore(container, patronage.nextSibling);
+        }
+    }
+
+    function quickThankShouldRun() {
+        if (window.location.protocol === 'file:') return true;
+        const hostname = window.location.hostname || '';
+        if (!hostname.endsWith('v2ex.com')) return false;
+        return /\/t\//.test(window.location.pathname);
+    }
+
+    function quickThankCheckAndInsert() {
+        if (!quickThankShouldRun()) return;
+        quickThankInsertControls();
+    }
+
+    function initQuickThank() {
+        if (!quickThankShouldRun()) return;
+        quickThankCheckAndInsert();
+        if (quickThankInitialized) return;
+        quickThankInitialized = true;
+
+        const mo = new MutationObserver(() => quickThankCheckAndInsert());
+        mo.observe(document.body, { childList: true, subtree: true });
+
+        if (typeof GM_registerMenuCommand === 'function') {
+            GM_registerMenuCommand('V2EX 快速感谢：说明', () => {
+                alert('在话题页面会在打赏者列表处显示“感谢所有打赏者”按钮。点击会将 @用户名 列表填入回复框。\n自动提交有风险，默认关闭。');
+            });
+            GM_registerMenuCommand('清除已记录的已感谢用户', () => {
+                if (confirm('确定清除已感谢记录？')) {
+                    quickThankClearThankedRecords();
+                    alert('已清除');
+                }
+            });
+        }
+    }
+
+    function createInlineDmButton({ username, targetId, fallbackAddress }) {
+        if (targetId && document.getElementById(targetId)) return null;
+        const btn = document.createElement('a');
+        if (targetId) btn.id = targetId;
+        btn.href = '#';
+        btn.className = 'thank dm-btn';
+        btn.textContent = '私';
+        btn.title = `私信 @${username}`;
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            btn.classList.add('loading');
+            try {
+                const addr = await getUserAddress(username, { fallbackAddress });
+                if (!addr) throw new Error('对方未绑定 Solana 地址');
+                await ensurePhantomConnected();
+                openDmModal(username, addr);
+            } catch (err) {
+                alert(err.message || '无法发送私信');
+            } finally {
+                btn.classList.remove('loading');
+            }
+        });
+        return btn;
+    }
+
+    // 为经典主题页的回复添加打赏 + 私信按钮
+    function addTopicTipButtons() {
+        const replies = document.querySelectorAll('.cell[id^="r_"]');
+        const topicAuthor = getTopicAuthorInfo();
+        
+        replies.forEach(reply => {
             const userLink = reply.querySelector('.dark');
             if (!userLink) return;
             const username = userLink.textContent.trim();
@@ -1001,105 +1573,152 @@
 
             const thankArea = replyActions.querySelector('.thank_area');
             const actionContainer = thankArea || replyActions;
-            const tipButton = document.createElement('a');
-            const defaultLabel = '赏';
+            const timeAnchor = reply.querySelector('.ago') || reply.querySelector('.fade');
+            const tipButtonId = `tip-${reply.id}`;
+            const dmButtonId = `dm-${reply.id}`;
 
-            tipButton.href = '#';
-            tipButton.className = 'thank tip-button';
-            tipButton.title = `打赏 @${username}`;
-            tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该回复');
-            tipButton.innerHTML = defaultLabel;
+            let tipButton = reply.querySelector(`#${tipButtonId}`);
 
-            tipButton.addEventListener('click', async (e) => {
-                e.preventDefault();
-                tipButton.classList.add('loading');
-                tipButton.innerHTML = '...';
+            if (!tipButton) {
+                const defaultLabel = '赏';
+                tipButton = document.createElement('a');
+                tipButton.id = tipButtonId;
+                tipButton.href = '#';
+                tipButton.className = 'thank tip-button';
+                tipButton.title = `打赏 @${username}`;
+                tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该回复');
+                tipButton.innerHTML = defaultLabel;
 
-                try {
-                    const replyContentEl = reply.querySelector('.reply_content');
-                    const replyText = replyContentEl ? replyContentEl.innerText || replyContentEl.textContent : '';
-                    const replyId = reply.id; // 获取回复ID，格式如 'r_17147431'
-                    const address = await getUserAddress(username);
+                tipButton.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    tipButton.classList.add('loading');
+                    tipButton.innerHTML = '...';
 
-                    if (!address) {
-                        alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
-                        return;
+                    try {
+                        const replyContentEl = reply.querySelector('.reply_content');
+                        const replyText = replyContentEl ? replyContentEl.innerText || replyContentEl.textContent : '';
+                        const replyId = reply.id; // 获取回复ID，格式如 'r_17147431'
+                        const address = await getUserAddress(username);
+
+                        if (!address) {
+                            alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                            return;
+                        }
+
+                        await showTipModal(username, address, floorNumber, replyText, replyId);
+                    } catch (error) {
+                        console.error('获取用户信息失败:', error);
+                        alert('获取用户信息失败，请稍后重试');
+                    } finally {
+                        tipButton.classList.remove('loading');
+                        tipButton.innerHTML = defaultLabel;
                     }
+                });
 
-                    await showTipModal(username, address, floorNumber, replyText, replyId);
-                } catch (error) {
-                    console.error('获取用户信息失败:', error);
-                    alert('获取用户信息失败，请稍后重试');
-                } finally {
-                    tipButton.classList.remove('loading');
-                    tipButton.innerHTML = defaultLabel;
-                }
-            });
+            }
 
-            if (actionContainer === replyActions) {
-                const firstElement = replyActions.firstElementChild;
-                replyActions.insertBefore(tipButton, firstElement || null);
-            } else {
+            const insertAfterIfNeeded = (target, node) => {
+                if (!target || !node) return;
+                if (target.nextElementSibling === node) return;
+                target.insertAdjacentElement('afterend', node);
+            };
+
+            if (timeAnchor) {
+                insertAfterIfNeeded(timeAnchor, tipButton);
+            } else if (tipButton.parentElement !== actionContainer) {
                 actionContainer.appendChild(tipButton);
+            }
+
+            let dmButton = reply.querySelector(`#${dmButtonId}`);
+            if (!dmButton) {
+                const fallbackAddress = topicAuthor.username && username === topicAuthor.username ? topicAuthor.address : null;
+                dmButton = createInlineDmButton({ username, targetId: dmButtonId, fallbackAddress });
+                if (!dmButton) return;
+            }
+
+            if (tipButton) {
+                insertAfterIfNeeded(tipButton, dmButton);
+            } else if (timeAnchor) {
+                insertAfterIfNeeded(timeAnchor, dmButton);
+            } else if (dmButton.parentElement !== actionContainer) {
+                actionContainer.appendChild(dmButton);
             }
         });
     }
 
-    // 为 Planet 页的评论添加打赏按钮
+    // 为 Planet 页的评论添加打赏 + 私信按钮
     function addPlanetTipButtons() {
         const comments = document.querySelectorAll('.planet-comment');
 
         comments.forEach(comment => {
             const actions = comment.querySelector('.planet-comment-actions');
-            if (!actions || actions.querySelector('.tip-button')) return;
+            const commentId = comment.id || '';
+            const tipId = commentId ? `tip-${commentId}` : '';
+            const dmId = commentId ? `dm-${commentId}` : '';
+            if (!actions) return;
 
             const userLink = comment.querySelector('.planet-comment-header a[href^="/member/"]');
             if (!userLink) return;
             const username = userLink.textContent.trim();
             const floorNumber = null; // Planet 评论不需要显示楼号
 
-            const tipButton = document.createElement('a');
+            let tipButton = tipId ? actions.querySelector(`#${tipId}`) : null;
             const defaultLabel = '赏';
 
-            tipButton.href = '#';
-            tipButton.className = 'planet-comment-action tip-button planet-tip-button';
-            tipButton.title = `打赏 @${username}`;
-            tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该评论');
-            tipButton.innerHTML = defaultLabel;
+            if (!tipButton) {
+                tipButton = document.createElement('a');
+                if (tipId) tipButton.id = tipId;
+                tipButton.href = '#';
+                tipButton.className = 'planet-comment-action tip-button planet-tip-button';
+                tipButton.title = `打赏 @${username}`;
+                tipButton.setAttribute('data-tip', '使用 $V2EX 打赏该评论');
+                tipButton.innerHTML = defaultLabel;
 
-            tipButton.addEventListener('click', async (e) => {
-                e.preventDefault();
-                tipButton.classList.add('loading');
-                tipButton.innerHTML = '...';
+                tipButton.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    tipButton.classList.add('loading');
+                    tipButton.innerHTML = '...';
 
-                try {
-                    const commentContentEl = comment.querySelector('.planet-comment-content') || comment.querySelector('.markdown_body');
-                    const replyText = commentContentEl ? commentContentEl.innerText || commentContentEl.textContent : '';
-                    const replyId = comment.id; // 获取评论ID
-                    const address = await getUserAddress(username);
+                    try {
+                        const commentContentEl = comment.querySelector('.planet-comment-content') || comment.querySelector('.markdown_body');
+                        const replyText = commentContentEl ? commentContentEl.innerText || commentContentEl.textContent : '';
+                        const replyId = comment.id; // 获取评论ID
+                        const address = await getUserAddress(username);
 
-                    if (!address) {
-                        alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
-                        return;
+                        if (!address) {
+                            alert(`用户 ${username} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                            return;
+                        }
+
+                        await showTipModal(username, address, floorNumber, replyText, replyId, {
+                            tipType: 'planet-comment'
+                        });
+                    } catch (error) {
+                        console.error('获取用户信息失败:', error);
+                        alert('获取用户信息失败，请稍后重试');
+                    } finally {
+                        tipButton.classList.remove('loading');
+                        tipButton.innerHTML = defaultLabel;
                     }
+                });
 
-                    await showTipModal(username, address, floorNumber, replyText, replyId, {
-                        tipType: 'planet-comment'
-                    });
-                } catch (error) {
-                    console.error('获取用户信息失败:', error);
-                    alert('获取用户信息失败，请稍后重试');
-                } finally {
-                    tipButton.classList.remove('loading');
-                    tipButton.innerHTML = defaultLabel;
+                const replyAction = actions.querySelector('.planet-comment-action');
+                if (replyAction) {
+                    actions.insertBefore(tipButton, replyAction);
+                } else {
+                    actions.insertBefore(tipButton, actions.firstChild);
                 }
-            });
+            }
 
-            const replyAction = actions.querySelector('.planet-comment-action');
-            if (replyAction) {
-                actions.insertBefore(tipButton, replyAction);
-            } else {
-                actions.insertBefore(tipButton, actions.firstChild);
+            if (!actions.querySelector(`#${dmId}`)) {
+                const dmButton = createInlineDmButton({ username, targetId: dmId });
+                if (dmButton) {
+                    if (tipButton && tipButton.parentElement === actions) {
+                        tipButton.insertAdjacentElement('afterend', dmButton);
+                    } else {
+                        actions.insertBefore(dmButton, actions.firstChild);
+                    }
+                }
             }
         });
     }
@@ -1110,7 +1729,12 @@
         addPlanetPostTipButtons();
     }
 
-    // 为 Planet 主列表的主题卡片添加打赏按钮
+    function addDmButtons() {
+        addTopicAuthorDmButton();
+        addProfileDmButton();
+    }
+
+    // 为 Planet 主列表的主题卡片添加打赏 + 私信按钮
     function addPlanetPostTipButtons() {
         const posts = document.querySelectorAll('.planet-post');
 
@@ -1174,7 +1798,34 @@
                 }
             });
 
+            const dmId = postUuid ? `dm-${postUuid}` : '';
+            const dmButton = document.createElement('a');
+            if (dmId) dmButton.id = dmId;
+            dmButton.href = '#';
+            dmButton.className = 'tip-button planet-tip-button dm-btn';
+            dmButton.textContent = '私';
+            dmButton.title = '私信作者';
+
+            dmButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                dmButton.classList.add('loading');
+                try {
+                    if (!siteAddress) throw new Error('未获取到 Planet 地址');
+                    const username = await getPlanetOwnerUsername(siteAddress);
+                    if (!username) throw new Error('未找到作者用户名');
+                    const addr = await getUserAddress(username);
+                    if (!addr) throw new Error('对方未绑定 Solana 地址');
+                    await ensurePhantomConnected();
+                    openDmModal(username, addr);
+                } catch (err) {
+                    alert(err.message || '无法发送私信');
+                } finally {
+                    dmButton.classList.remove('loading');
+                }
+            });
+
             tipWrapper.appendChild(tipButton);
+            tipWrapper.appendChild(dmButton);
             statsPart.insertAdjacentElement('afterend', tipWrapper);
         });
     }
@@ -1221,10 +1872,14 @@
         await ensureSolanaLibraries();
         await loadSolanaLib();
         addTipButtons();
+        addDmButtons();
+        initQuickThank();
         
         // 监听DOM变化（如果页面动态加载内容）
         const observer = new MutationObserver(() => {
             addTipButtons();
+            addDmButtons();
+            quickThankCheckAndInsert();
         });
         
         observer.observe(document.body, {
