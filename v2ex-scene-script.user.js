@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.1.2
+// @version      1.1.3
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -31,7 +31,7 @@
             --tip-chat-text: #e2e8f0;
             --tip-chat-muted: #94a3b8;
             --tip-chat-accent: #6366f1;
-            --tip-chat-bubble-self: #2563eb;
+            --tip-chat-bubble-self: #283859;
             --tip-chat-bubble-peer: rgba(100, 116, 139, 0.35);
             --dm-accent: #3b82f6;
             --dm-bg: #0f172a;
@@ -777,17 +777,23 @@
             gap: 10px;
             background: var(--tip-chat-panel-bg);
         }
+        .tip-chat-composer-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
         .tip-chat-composer textarea {
             width: 100%;
-            min-height: 54px;
+            min-height: 22px;
             border-radius: 14px;
             border: 1px solid var(--tip-chat-border);
             background: rgba(15, 23, 42, 0.4);
             color: var(--tip-chat-text);
-            padding: 10px 12px;
+            padding: 8px 10px;
             font-size: 13px;
             line-height: 1.4;
             resize: vertical;
+            flex: 1;
         }
         .tip-chat-composer textarea:focus {
             outline: none;
@@ -798,27 +804,23 @@
             opacity: 0.6;
             cursor: not-allowed;
         }
-        .tip-chat-composer-actions {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
         .tip-chat-composer-status {
             font-size: 12px;
             color: var(--tip-chat-muted);
-            flex: 1;
             min-height: 16px;
         }
         .tip-chat-send-btn {
             border: none;
             background: #6366f1;
             color: #fff;
-            padding: 8px 16px;
-            border-radius: 10px;
+            padding: 10px 16px;
+            border-radius: 12px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: opacity 0.2s ease;
+            align-self: stretch;
+            white-space: nowrap;
         }
         .tip-chat-send-btn:hover:not([disabled]) {
             opacity: 0.9;
@@ -903,6 +905,15 @@
             word-break: break-word;
             align-self: flex-start;
             max-width: 100%;
+        }
+        .tip-chat-message-bubble a {
+            color: #7cb7ff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .tip-chat-message-bubble a:hover {
+            text-decoration: underline;
+            color: #a5d4ff;
         }
         .tip-chat-message.outgoing .tip-chat-message-bubble {
             background: var(--tip-chat-bubble-self);
@@ -2368,6 +2379,29 @@
         return true;
     }
 
+    function clearTipChatCache() {
+        try {
+            localStorage.removeItem(TIP_CHAT_STORAGE_KEY);
+            localStorage.removeItem(TIP_CHAT_META_KEY);
+        } catch (err) {
+            console.warn('清除本地缓存失败', err);
+        }
+        tipChatState.records = [];
+        tipChatState.conversationMap = new Map();
+        tipChatState.summaries = [];
+        tipChatState.visibleCountMap = new Map();
+        tipChatState.activePeer = null;
+        tipChatState.pinned = false;
+        tipChatState.refreshing = null;
+        saveTipChatMeta({ latestId: null, lastSeenId: null, updatedAt: Date.now() });
+        updateTipChatPinUI();
+        updateLauncherBadge(false);
+        renderTipConversationList();
+        renderTipThread();
+        refreshTipChatData({ forceFull: true, repair: true }).catch(() => {});
+        alert('已清除本地缓存并开始重新同步');
+    }
+
     function parseAmountInfo(text = '') {
         if (!text) return { amount: null, token: 'v2ex' };
         const cleaned = text.replace(/,/g, '');
@@ -2486,8 +2520,9 @@
     }
 
     function formatRecordPreview(record) {
-        if (record?.memo) {
-            return record.memo.length > 80 ? `${record.memo.slice(0, 77)}…` : record.memo;
+        const memoText = getRecordMemoText(record);
+        if (memoText) {
+            return memoText.length > 80 ? `${memoText.slice(0, 77)}…` : memoText;
         }
         if (record?.amount) {
             const tokenLabel = record.token === 'sol' ? 'SOL' : '$V2EX';
@@ -2497,7 +2532,8 @@
     }
 
     function formatMessageBody(record) {
-        if (record?.memo) return record.memo;
+        const memoText = getRecordMemoText(record);
+        if (memoText) return memoText;
         const tokenLabel = record?.token === 'sol' ? 'SOL' : '$V2EX';
         if (record?.amount) {
             return `打赏 ${record.amount} ${tokenLabel}`;
@@ -2509,6 +2545,99 @@
     function escapeHtmlText(value = '') {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
         return value.replace(/[&<>"']/g, (ch) => map[ch]).replace(/\n/g, '<br>');
+    }
+
+    const ALLOWED_RICH_TAGS = new Set(['A', 'SPAN', 'DIV', 'P', 'BR', 'UL', 'OL', 'LI', 'STRONG', 'EM', 'B', 'I', 'CODE', 'PRE', 'SMALL']);
+
+    function escapeHtmlAttribute(value = '') {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return value.replace(/[&<>"']/g, (ch) => map[ch]);
+    }
+
+    function isSafeHref(href = '') {
+        const trimmed = href.trim();
+        if (!trimmed) return false;
+        if (/^javascript:/i.test(trimmed)) return false;
+        return /^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('/');
+    }
+
+    function sanitizeRichTextElement(element) {
+        if (!element) return '';
+        const walk = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                return escapeHtmlText(node.textContent || '');
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) return '';
+            const tag = (node.nodeName || '').toUpperCase();
+            if (tag === 'BR') return '<br>';
+            const children = Array.from(node.childNodes).map(walk).join('');
+            if (!ALLOWED_RICH_TAGS.has(tag)) {
+                return children;
+            }
+            let attrs = '';
+            if (tag === 'A') {
+                const href = node.getAttribute('href') || '';
+                if (isSafeHref(href)) {
+                    attrs += ` href="${escapeHtmlAttribute(href)}" target="_blank" rel="noopener noreferrer"`;
+                }
+            }
+            return `<${tag.toLowerCase()}${attrs}>${children}</${tag.toLowerCase()}>`;
+        };
+        return Array.from(element.childNodes).map(walk).join('').trim();
+    }
+
+    function extractRichText(element) {
+        if (!element) return { memoText: '', memoHtml: '' };
+        const memoText = (element.textContent || '').trim();
+        const memoHtml = sanitizeRichTextElement(element);
+        return { memoText, memoHtml };
+    }
+
+    function getRecordMemoText(record) {
+        if (!record) return '';
+        if (typeof record.memo === 'string' && record.memo.trim()) return record.memo.trim();
+        if (typeof record.memoHtml === 'string' && record.memoHtml.trim()) {
+            const scratch = document.createElement('div');
+            scratch.innerHTML = record.memoHtml;
+            return (scratch.textContent || '').trim();
+        }
+        return '';
+    }
+
+    function getRecordMessageHtml(record) {
+        if (!record) return '';
+        const memoText = getRecordMemoText(record);
+        const memoHtml = typeof record.memoHtml === 'string' ? record.memoHtml.trim() : '';
+        if (memoHtml) {
+            if (/<a\s/i.test(memoHtml)) return memoHtml;
+            if (memoText) return linkifyText(memoText);
+            return memoHtml;
+        }
+        if (memoText) return linkifyText(memoText);
+        return escapeHtmlText(formatMessageBody(record) || '');
+    }
+
+    function linkifyText(text = '') {
+        if (!text) return '';
+        const urlRegex = /(https?:\/\/[^\s]+|\/?t\/\d+(?:#[\w-]+)?)/gi;
+        let html = '';
+        let lastIndex = 0;
+        text.replace(urlRegex, (match, _p1, offset) => {
+            html += escapeHtmlText(text.slice(lastIndex, offset));
+            let href = match;
+            if (!match.startsWith('http')) {
+                const path = match.startsWith('/') ? match : `/${match}`;
+                href = `${window.location.origin}${path}`;
+            }
+            const safeHref = escapeHtmlAttribute(href);
+            html += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(match)}</a>`;
+            lastIndex = offset + match.length;
+            return match;
+        });
+        if (lastIndex < text.length) {
+            html += escapeHtmlText(text.slice(lastIndex));
+        }
+        return html || escapeHtmlText(text);
     }
 
     function rebuildTipConversationMap() {
@@ -2657,12 +2786,13 @@
                     <div class="tip-chat-sidebar-header">
                         <div>
                             <div class="tip-chat-title">V2EX会话</div>
-                            <div class="tip-chat-subtitle">基于 $V2EX 打赏记录</div>
+                            <div class="tip-chat-subtitle">基于$V2EX打赏记录</div>
                         </div>
                         <div class="tip-chat-sidebar-actions">
                             <button class="tip-chat-pin-btn" title="固定面板">PIN</button>
-                            <button class="tip-chat-icon-btn tip-chat-refresh" title="刷新">⟳</button>
-                            <button class="tip-chat-icon-btn tip-chat-close" title="关闭">✕</button>
+                            <button class="tip-chat-icon-btn tip-chat-refresh" title="刷新">R</button>
+                            <button class="tip-chat-icon-btn tip-chat-clear" title="清除本地缓存">D</button>
+                            <button class="tip-chat-icon-btn tip-chat-close" title="关闭">X</button>
                         </div>
                     </div>
                     <div class="tip-chat-conversation-list" id="tip-chat-conversation-list"></div>
@@ -2678,11 +2808,11 @@
                         <div class="tip-chat-empty">正在加载...</div>
                     </div>
                     <div class="tip-chat-composer">
-                        <textarea id="tip-chat-composer-input" placeholder="选择会话以发送私信" maxlength="500"></textarea>
-                        <div class="tip-chat-composer-actions">
-                            <div class="tip-chat-composer-status" id="tip-chat-composer-status"></div>
+                        <div class="tip-chat-composer-row">
+                            <textarea id="tip-chat-composer-input" maxlength="500"></textarea>
                             <button class="tip-chat-send-btn" id="tip-chat-send-btn" type="button">发送</button>
                         </div>
+                        <div class="tip-chat-composer-status" id="tip-chat-composer-status"></div>
                     </div>
                 </section>
             </div>
@@ -2702,6 +2832,7 @@
             composerSendBtn: panel.querySelector('#tip-chat-send-btn'),
             pinBtn: panel.querySelector('.tip-chat-pin-btn'),
             refreshBtn: panel.querySelector('.tip-chat-refresh'),
+            clearBtn: panel.querySelector('.tip-chat-clear'),
             closeBtn: panel.querySelector('.tip-chat-close')
         };
 
@@ -2710,6 +2841,14 @@
         tipChatState.elements.refreshBtn.addEventListener('click', () => {
             refreshTipChatData({ forceFull: needsTipChatBootstrap(), repair: true });
         });
+        if (tipChatState.elements.clearBtn) {
+            tipChatState.elements.clearBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (confirm('清除本地缓存并重新同步？')) {
+                    clearTipChatCache();
+                }
+            });
+        }
         if (tipChatState.elements.pinBtn) {
             tipChatState.elements.pinBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -3039,7 +3178,7 @@
 
             const bubble = document.createElement('div');
             bubble.className = 'tip-chat-message-bubble';
-            bubble.innerHTML = escapeHtmlText(formatMessageBody(record) || '');
+            bubble.innerHTML = getRecordMessageHtml(record);
 
             contentWrap.appendChild(meta);
             contentWrap.appendChild(bubble);
@@ -3065,7 +3204,7 @@
         const hasPeer = Boolean(tipChatState.activePeer);
         if (input) {
             input.disabled = !hasPeer || tipChatState.composerSending;
-            input.placeholder = hasPeer ? `对 @${tipChatState.activePeer} 说点什么...` : '选择会话以发送私信';
+            input.placeholder = hasPeer ? `对 @${tipChatState.activePeer} 说点什么...` : '';
         }
         if (sendBtn) {
             if (tipChatState.composerSending) {
@@ -3080,7 +3219,7 @@
             if (typeof message === 'string') {
                 statusEl.textContent = message;
             } else if (!preserveStatus || !statusEl.textContent) {
-                statusEl.textContent = hasPeer ? '发送将自动附带 1 $V2EX' : '选择会话以发送私信';
+                statusEl.textContent = hasPeer ? '发送将自动附带 1 $V2EX' : '';
             }
         }
     }
@@ -3150,6 +3289,9 @@
         }
         if (!normalized.timestamp) {
             normalized.timestamp = Date.now();
+        }
+        if (normalized.memo && !normalized.memoHtml) {
+            normalized.memoHtml = escapeHtmlText(normalized.memo);
         }
         const nextRecords = Array.isArray(tipChatState.records) ? [...tipChatState.records, normalized] : [normalized];
         const trimmed = trimTipRecords(nextRecords);
@@ -3373,7 +3515,7 @@
             const timeLabel = timeSpan?.getAttribute('title')?.trim() || timeSpan?.textContent?.trim() || '';
             const timestamp = parseRelativeTimeLabel(timeLabel);
             const memoEl = row.querySelector('.payload, .tip-memo, .memo, .item_content, .markdown_body, .message, .topic_content');
-            const memo = memoEl ? memoEl.textContent.trim() : '';
+            const { memoText: memo, memoHtml } = memoEl ? extractRichText(memoEl) : { memoText: '', memoHtml: '' };
             const avatarImg = counterpartLink?.querySelector('img.avatar') || row.querySelector('img.avatar');
             const avatarSrc = avatarImg?.src || null;
             let from = null;
@@ -3408,6 +3550,7 @@
                 from,
                 to,
                 memo,
+                memoHtml,
                 amount,
                 token,
                 timestamp,
