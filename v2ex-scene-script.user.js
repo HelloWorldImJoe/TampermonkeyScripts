@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.1
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -71,6 +71,8 @@
     const TIP_CHAT_SELF_KEY = 'v2ex-tip-chat-self';
     // 聊天记录最大限制
     const TIP_CHAT_RECORD_LIMIT = 600;
+    // 聊天消息长度限制（需少于 150 个字符）
+    const TIP_CHAT_MAX_MESSAGE_LENGTH = 149;
     // 脚本远程地址
     const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/v2ex-scene-script.user.js';
     // 脚本检查缓存键
@@ -90,7 +92,7 @@
     // 长按移动容差（像素）
     const TIP_CHAT_LONG_PRESS_MOVE_THRESHOLD = 6;
     // 初始加载数量
-    const TIP_CHAT_INITIAL_LOAD = 30;
+    const TIP_CHAT_INITIAL_LOAD = 50;
     // 加载步长
     const TIP_CHAT_LOAD_STEP = 20;
     // 手动刷新修复页数上限
@@ -3193,6 +3195,27 @@
         return { quoteId, quoteText, mainText };
     }
 
+    function findTipChatRecordByQuoteId(quoteId) {
+        if (!quoteId || !Array.isArray(tipChatState.records)) return null;
+        const normalizedTarget = normalizeQuoteId(quoteId) || quoteId;
+        for (let i = tipChatState.records.length - 1; i >= 0; i--) {
+            const record = tipChatState.records[i];
+            if (!record?.id) continue;
+            const normalizedRecordId = normalizeQuoteId(record.id) || record.id;
+            if (normalizedRecordId === normalizedTarget || record.id === quoteId) {
+                return record;
+            }
+        }
+        return null;
+    }
+
+    function resolveQuotePreviewText(quoteId, inlineQuoteText = '') {
+        if (inlineQuoteText) return inlineQuoteText;
+        const record = findTipChatRecordByQuoteId(quoteId);
+        if (!record) return '';
+        return getRecordMemoText(record) || formatMessageBody(record) || '';
+    }
+
     function escapeCssSelector(val) {
         if (!val) return '';
         if (window.CSS && typeof window.CSS.escape === 'function') {
@@ -3208,8 +3231,11 @@
 
         if (memoText) {
             const { quoteId, quoteText, mainText } = parseQuotedMessage(memoText);
-            if (quoteId || quoteText) {
-                const quoteHtml = quoteText ? linkifyText(quoteText) : '';
+            const resolvedQuoteText = resolveQuotePreviewText(quoteId, quoteText);
+            const fallbackQuoteText = quoteId && !resolvedQuoteText ? '引用内容不可见' : '';
+            const quoteContent = resolvedQuoteText || fallbackQuoteText;
+            if (quoteId || quoteContent) {
+                const quoteHtml = quoteContent ? linkifyText(quoteContent) : '';
                 const mainHtml = mainText ? linkifyText(mainText) : '';
                 const dataAttr = quoteId ? ` data-quote-target="${escapeHtmlAttribute(quoteId)}"` : '';
                 return `<div class="tip-chat-message-quote"${dataAttr}>${quoteHtml}</div>${mainHtml}`;
@@ -3435,7 +3461,7 @@
                     </div>
                     <div class="tip-chat-composer">
                         <div class="tip-chat-composer-row">
-                            <textarea id="tip-chat-composer-input" maxlength="500"></textarea>
+                            <textarea id="tip-chat-composer-input" maxlength="${TIP_CHAT_MAX_MESSAGE_LENGTH}"></textarea>
                             <button class="tip-chat-send-btn" id="tip-chat-send-btn" type="button">发送</button>
                         </div>
                     </div>
@@ -4027,17 +4053,25 @@
             
             const messageText = getRecordMemoText(record) || formatMessageBody(record) || '';
             const quoteId = normalizeQuoteId(record.id) || '';
+            
+            const prefix = quoteId ? `[quote:${quoteId}]` : '';
+            if (!prefix) {
+                updateTipComposerState({ message: '未找到引用消息 ID，无法引用', preserveStatus: true });
+                return;
+            }
+            const currentText = composer.value.trim();
+            const suffix = currentText ? `\n${currentText}\n` : '\n';
+            const composed = `${prefix}\n------${suffix}`;
+            if (composed.length > TIP_CHAT_MAX_MESSAGE_LENGTH) {
+                updateTipComposerState({ message: `引用后内容超出 ${TIP_CHAT_MAX_MESSAGE_LENGTH} 字符限制`, preserveStatus: true });
+                return;
+            }
             tipChatState.quotedMessage = {
                 text: messageText,
                 from: record.from,
                 timestamp: record.created,
                 id: quoteId
             };
-            
-            const prefix = quoteId ? `[quote:${quoteId}]` : '';
-            const currentText = composer.value.trim();
-            const mainPart = currentText ? `\n${currentText}\n` : '';
-            const composed = `${prefix}${messageText}\n------\n${mainPart}`;
             composer.value = composed;
 
             // 提升输入框高度以容纳引用
@@ -4146,9 +4180,22 @@
             updateTipComposerState({ message: '请选择会话以发送私信', preserveStatus: false });
             return;
         }
-        const text = (input.value || '').trim();
+        let text = (input.value || '').trim();
         if (!text || text.length < 3) {
             updateTipComposerState({ message: '请至少输入 3 个字符', preserveStatus: true });
+            return;
+        }
+        if (text.length > TIP_CHAT_MAX_MESSAGE_LENGTH) {
+            updateTipComposerState({ message: '消息需少于 150 个字符', preserveStatus: true });
+            return;
+        }
+        const parsedQuote = parseQuotedMessage(text);
+        if (parsedQuote.quoteId) {
+            const sanitizedMain = parsedQuote.mainText ? `\n${parsedQuote.mainText}` : '';
+            text = `[quote:${parsedQuote.quoteId}]\n------${sanitizedMain}`.trim();
+        }
+        if (text.length > TIP_CHAT_MAX_MESSAGE_LENGTH) {
+            updateTipComposerState({ message: '消息需少于 150 个字符', preserveStatus: true });
             return;
         }
         const me = resolveTipChatCurrentUser();
