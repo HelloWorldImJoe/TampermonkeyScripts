@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         V2EX 打赏 + 私信
+// @name         $V2EX Scence +
 // @namespace    http://tampermonkey.net/
-// @version      1.3.4
-// @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
+// @version      1.4.0
+// @description  为 V2EX 增强场景化打赏、私信和聊天功能
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
 // @match        https://*.v2ex.com/*
@@ -60,6 +60,8 @@
     const QUICK_THANK_STORAGE_KEY = 'quick-thank-thanked-users-v1';
     // DM 模态元素
     let dmModalEl = null;
+    // 打赏模态上下文
+    let tipModalContext = null;
     // 快速感谢是否已初始化
     let quickThankInitialized = false;
 
@@ -73,6 +75,29 @@
     const TIP_CHAT_RECORD_LIMIT = 600;
     // 聊天消息长度限制（需少于 150 个字符）
     const TIP_CHAT_MAX_MESSAGE_LENGTH = 149;
+    const TIP_CHAT_PREFS_KEY = 'v2ex-tip-chat-prefs-v1';
+    const TIP_CHAT_MIN_WIDTH = 620;
+    const TIP_CHAT_MIN_HEIGHT = 420;
+    const TIP_CHAT_COMPOSER_MAX_LINES = 5;
+    const TIP_CHAT_CHANGELOG_KEY = 'v2ex-tip-chat-changelog-version';
+    const TIP_CHAT_DEFAULT_THEME = 'dark';
+    const RESIZE_ICON_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/assets/resize.svg';
+    // 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
+    const SCRIPT_CHANGELOG_ENTRIES = {
+        '1.4.0': [
+            '新增聊天面板拖动缩放与自适应布局能力,可以通过右下角的拖拽手柄调整大小',
+            '新增主动发起会话功能, 输入用户名直接发起一个会话',
+            '新增聊天面板位置记忆功能, 面板位置会在关闭后保存, 下次打开时恢复',
+            '新增会话置顶功能, 置顶的会话会固定在列表顶部',
+            '新增消息引用功能, 可以引用某条消息进行回复, 长按消息气泡即可触发操作面板',
+            '新增引用消息点击跳转到原消息位置, 如果原消息在当前页面没加载, 则不跳转',
+            '新增日/月模式切换, 可以在面板顶部切换当前主题',
+            '新增图片显示支持, 可以在消息中显示图片链接',
+            '新增R按钮和C按钮, R按钮用于刷新会话列表(适应于消息不同步), C按钮用于清除当前会话记录(重新建立索引)',
+            '优化PIN状态不会再在刷新后丢失',
+            '修复若干已知问题'
+        ]
+    };
     // 脚本远程地址
     const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/v2ex-scene-script.user.js';
     // 脚本检查缓存键
@@ -115,6 +140,18 @@
         visibleCountMap: new Map(),
         // 元素对象
         elements: {},
+        // 偏好设置
+        preferences: null,
+        // 偏好设置是否已加载
+        prefsLoaded: false,  
+        // UI 偏好设置
+        uiPrefs: createDefaultPanelPrefs(),  
+        // 置顶的对话
+        pinnedConversations: new Set(),  
+        // 手动添加的对等方
+        manualPeers: new Map(),  
+        // 当前主题
+        currentTheme: TIP_CHAT_DEFAULT_THEME, 
         // 当前登录用户
         currentUser: null,
         // 刷新状态
@@ -134,11 +171,12 @@
         // 引用的消息
         quotedMessage: null
     };
+    let pendingConversationRenderFrame = null;
     // 成员头像缓存
     const memberAvatarCache = new Map();
     // 成员头像请求缓存
     const memberAvatarRequestCache = new Map();
-
+    // 是否在成员页面
     const isMemberPage = window.location.pathname.startsWith('/member/');
 
     const baseStyles = `
@@ -697,9 +735,18 @@
             pointer-events: auto;
             transform: translateY(0);
         }
+        .tip-chat-panel.custom-position {
+            right: auto;
+            bottom: auto;
+        }
+        .tip-chat-panel.dragging {
+            cursor: move;
+        }
         .tip-chat-shell {
             width: min(920px, 96vw);
             height: min(740px, 85vh);
+            min-width: 600px;
+            min-height: 420px;
             display: flex;
             border-radius: 18px;
             overflow: hidden;
@@ -707,9 +754,41 @@
             border: 1px solid var(--tip-chat-border);
             color: var(--tip-chat-text);
             box-shadow: 0 30px 70px rgba(2, 6, 23, 0.7);
+            position: relative;
+        }
+        .tip-chat-draggable {
+            cursor: move;
+            user-select: none;
+        }
+        .tip-chat-resize-handle {
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            right: 8px;
+            bottom: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--tip-chat-border);
+            background: rgba(148, 163, 184, 0.12);
+            cursor: nwse-resize;
+            z-index: 2;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tip-chat-resize-handle::after {
+            content: '';
+            width: 14px;
+            height: 14px;
+            background: url(${RESIZE_ICON_URL}) center/contain no-repeat;
+            opacity: 0.85;
+        }
+        .tip-chat-resize-handle:hover {
+            background-color: rgba(99, 102, 241, 0.2);
         }
         .tip-chat-sidebar {
-            width: 320px;
+            width: 400px;
+            min-width: 360px;
             background: var(--tip-chat-sidebar-bg);
             border-right: 1px solid var(--tip-chat-border);
             display: flex;
@@ -753,6 +832,12 @@
             opacity: 0.6;
             pointer-events: none;
         }
+        .tip-chat-icon-btn.tip-chat-new {
+            font-weight: 700;
+        }
+        .tip-chat-icon-btn.tip-chat-theme {
+            font-size: 14px;
+        }
         .tip-chat-conversation-list {
             flex: 1;
             overflow-y: auto;
@@ -782,6 +867,15 @@
         }
         .tip-chat-conversation-item.active {
             background: rgba(99, 102, 241, 0.18);
+        }
+        .tip-chat-conversation-item.pinned {
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            background: rgba(99, 102, 241, 0.08);
+        }
+        .tip-chat-conversation-pin-label {
+            color: var(--tip-chat-accent);
+            font-size: 11px;
+            margin-left: 6px;
         }
         .tip-chat-avatar {
             width: 38px;
@@ -878,6 +972,27 @@
             cursor: not-allowed;
             pointer-events: none;
         }
+        .tip-chat-thread-pin-btn {
+            height: 30px;
+            padding: 0 14px;
+            border-radius: 8px;
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            background: transparent;
+            color: var(--tip-chat-muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .tip-chat-thread-pin-btn.pinned {
+            color: var(--tip-chat-text);
+            border-color: rgba(99, 102, 241, 0.65);
+            background: rgba(99, 102, 241, 0.18);
+        }
+        .tip-chat-thread-pin-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         .tip-chat-pin-btn {
             min-width: 54px;
             height: 30px;
@@ -933,17 +1048,19 @@
         }
         .tip-chat-composer textarea {
             width: 100%;
-            min-height: 20px;
-            height: 20px;
+            min-height: 32px;
+            height: auto;
             border-radius: 14px;
             border: 1px solid var(--tip-chat-border);
             background: rgba(15, 23, 42, 0.4);
             color: var(--tip-chat-text);
-            padding: 8px 10px;
+            padding: 6px 10px;
             font-size: 13px;
             line-height: 1.4;
-            resize: vertical;
+            resize: none;
             flex: 1;
+            max-height: 180px;
+            overflow-y: auto;
         }
         .tip-chat-composer textarea:focus {
             outline: none;
@@ -1098,13 +1215,41 @@
             color: var(--tip-chat-text);
             cursor: pointer;
             font-size: 13px;
+            transition: background 0.2s ease;
         }
         .tip-chat-cta-btn:hover:not([disabled]) {
             background: rgba(99, 102, 241, 0.2);
         }
-        .tip-chat-cta-btn[disabled] {
+        .tip-chat-cta-btn[disabled]:not(.loading) {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+        .tip-chat-cta-btn.loading {
+            position: relative;
+            padding-left: 32px;
+            cursor: progress;
+        }
+        .tip-chat-cta-btn.loading::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            width: 14px;
+            height: 14px;
+            margin-top: -7px;
+            border-radius: 50%;
+            border: 2px solid rgba(99, 102, 241, 0.6);
+            border-top-color: transparent;
+            animation: tip-chat-spin 0.8s linear infinite;
+        }
+        @keyframes tip-chat-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .tip-chat-bootstrap-status {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--tip-chat-muted);
         }
         .tip-chat-message-actions {
             position: fixed;
@@ -1143,6 +1288,66 @@
             cursor: pointer;
             user-select: none;
             position: relative;
+        }
+        .tip-chat-panel.theme-light {
+            --tip-chat-panel-bg: #f8fafc;
+            --tip-chat-sidebar-bg: #edf2ff;
+            --tip-chat-border: rgba(71, 85, 105, 0.2);
+            --tip-chat-text: #0f172a;
+            --tip-chat-muted: #475569;
+            --tip-chat-bubble-self: #dbeafe;
+            --tip-chat-bubble-peer: rgba(148, 163, 184, 0.35);
+        }
+        .tip-chat-panel.theme-light .tip-chat-composer textarea {
+            background: transparent;
+            border-color: rgba(148, 163, 184, 0.35);
+            color: #0f172a;
+        }
+        .tip-chat-panel.theme-light .tip-chat-pin-btn {
+            background: transparent;
+            border-color: rgba(148, 163, 184, 0.45);
+            color: #475569;
+        }
+        .tip-chat-panel.theme-light .tip-chat-pin-btn.pinned {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.6);
+            color: #312e81;
+        }
+        .tip-changelog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.65);
+            z-index: 2147483646;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tip-changelog-modal {
+            background: var(--tip-chat-panel-bg);
+            color: var(--tip-chat-text);
+            border: 1px solid var(--tip-chat-border);
+            border-radius: 16px;
+            width: min(420px, 92vw);
+            padding: 24px;
+            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.45);
+        }
+        .tip-changelog-modal h3 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+        .tip-changelog-modal ul {
+            margin: 0 0 16px 18px;
+            padding: 0;
+            list-style: disc;
+            color: var(--tip-chat-text);
+        }
+        .tip-changelog-modal button {
+            border: none;
+            background: var(--tip-chat-accent);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
         }
         .tip-chat-message-quote {
             background: rgba(99, 102, 241, 0.15);
@@ -1817,6 +2022,12 @@
         // 取消按钮
         document.getElementById('tip-cancel').addEventListener('click', closeTipModal);
 
+        const confirmBtn = document.getElementById('tip-confirm');
+        confirmBtn.addEventListener('click', async () => {
+            if (!tipModalContext) return;
+            await handleTipConfirm(tipModalContext);
+        });
+
         // Tab切换
         document.querySelectorAll('.tip-modal-tab').forEach(tab => {
             tab.addEventListener('click', function() {
@@ -1876,14 +2087,8 @@
         document.querySelector('.tip-modal-tab[data-token="v2ex"]').classList.add('active');
         updateTipTokenLabel('v2ex');
 
-        // 重新绑定确认按钮事件
-        const confirmBtn = document.getElementById('tip-confirm');
-        const newConfirmBtn = confirmBtn.cloneNode(true);
-        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-        
-        newConfirmBtn.addEventListener('click', async function() {
-            await handleTipConfirm({ username, address, floorNumber, replyText, replyId, options });
-        });
+        // 更新确认按钮上下文
+        tipModalContext = { username, address, floorNumber, replyText, replyId, options };
 
         modal.style.display = 'flex';
     }
@@ -1894,6 +2099,7 @@
         if (modal) {
             modal.style.display = 'none';
         }
+        tipModalContext = null;
     }
 
     // 显示消息
@@ -2735,6 +2941,179 @@
         }
     }
 
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    function createDefaultPanelPrefs() {
+        return { width: 0, height: 0, x: null, y: null };
+    }
+
+    function normalizePanelPrefs(prefs) {
+        const base = createDefaultPanelPrefs();
+        if (!prefs || typeof prefs !== 'object') return base;
+        ['width', 'height', 'x', 'y'].forEach((key) => {
+            const value = Number(prefs[key]);
+            if (Number.isFinite(value)) {
+                base[key] = value;
+            }
+        });
+        return base;
+    }
+
+    function normalizeDraftEntries(entries) {
+        if (!Array.isArray(entries)) return [];
+        return entries.map((entry) => {
+            if (!entry) return null;
+            if (typeof entry === 'string') {
+                const username = entry.trim();
+                return username ? { username, ts: Date.now() } : null;
+            }
+            if (typeof entry.username === 'string') {
+                const username = entry.username.trim();
+                if (!username) return null;
+                return { username, ts: Number(entry.ts) || Date.now() };
+            }
+            return null;
+        }).filter(Boolean);
+    }
+
+    function loadTipChatPrefs() {
+        const stored = safeJsonParse(localStorage.getItem(TIP_CHAT_PREFS_KEY), null);
+        if (!stored) {
+            return {
+                panel: createDefaultPanelPrefs(),
+                lastPeer: null,
+                pinnedPeers: [],
+                drafts: [],
+                panelOpen: false,
+                panelPinned: false,
+                theme: TIP_CHAT_DEFAULT_THEME
+            };
+        }
+        return {
+            panel: normalizePanelPrefs(stored.panel),
+            lastPeer: typeof stored.lastPeer === 'string' ? stored.lastPeer : null,
+            pinnedPeers: Array.from(new Set(Array.isArray(stored.pinnedPeers) ? stored.pinnedPeers.filter(Boolean) : [])),
+            drafts: normalizeDraftEntries(stored.drafts),
+            panelOpen: Boolean(stored.panelOpen),
+            panelPinned: Boolean(stored.panelPinned),
+            theme: stored.theme === 'light' ? 'light' : TIP_CHAT_DEFAULT_THEME
+        };
+    }
+
+    function saveTipChatPrefs(prefs = {}) {
+        const payload = {
+            panel: normalizePanelPrefs(prefs.panel),
+            lastPeer: typeof prefs.lastPeer === 'string' ? prefs.lastPeer : null,
+            pinnedPeers: Array.from(new Set((prefs.pinnedPeers || []).filter(Boolean))),
+            drafts: normalizeDraftEntries(prefs.drafts),
+            panelOpen: Boolean(prefs.panelOpen),
+            panelPinned: Boolean(prefs.panelPinned),
+            theme: prefs.theme === 'light' ? 'light' : TIP_CHAT_DEFAULT_THEME
+        };
+        try {
+            localStorage.setItem(TIP_CHAT_PREFS_KEY, JSON.stringify(payload));
+        } catch (err) {
+            console.warn('保存聊天偏好失败', err);
+        }
+    }
+
+    function ensureTipChatPrefs() {
+        if (tipChatState.prefsLoaded && tipChatState.preferences) {
+            return tipChatState.preferences;
+        }
+        const prefs = loadTipChatPrefs();
+        tipChatState.preferences = prefs;
+        tipChatState.preferences.theme = prefs.theme === 'light' ? 'light' : TIP_CHAT_DEFAULT_THEME;
+        tipChatState.preferences.panelOpen = Boolean(prefs.panelOpen);
+        tipChatState.preferences.panelPinned = Boolean(prefs.panelPinned);
+        tipChatState.prefsLoaded = true;
+        tipChatState.uiPrefs = normalizePanelPrefs(prefs.panel);
+        tipChatState.pinned = Boolean(prefs.panelPinned);
+        tipChatState.pinnedConversations = new Set(prefs.pinnedPeers || []);
+        const manualPeers = new Map();
+        (prefs.drafts || []).forEach((entry) => {
+            manualPeers.set(entry.username, { peer: entry.username, createdAt: entry.ts });
+        });
+        tipChatState.manualPeers = manualPeers;
+        tipChatState.currentTheme = tipChatState.preferences.theme;
+        return prefs;
+    }
+
+    function persistPanelPrefs(partial = {}) {
+        ensureTipChatPrefs();
+        const merged = normalizePanelPrefs({ ...tipChatState.uiPrefs, ...partial });
+        const maxWidth = Math.max(TIP_CHAT_MIN_WIDTH, window.innerWidth - 40);
+        const maxHeight = Math.max(TIP_CHAT_MIN_HEIGHT, window.innerHeight - 80);
+        if (merged.width) {
+            merged.width = clamp(merged.width, TIP_CHAT_MIN_WIDTH, maxWidth);
+        }
+        if (merged.height) {
+            merged.height = clamp(merged.height, TIP_CHAT_MIN_HEIGHT, maxHeight);
+        }
+        tipChatState.uiPrefs = merged;
+        tipChatState.preferences.panel = merged;
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function persistPanelPrefsFromRect() {
+        if (!tipChatState.elements.panel || !tipChatState.elements.shell) return;
+        const rect = tipChatState.elements.panel.getBoundingClientRect();
+        persistPanelPrefs({
+            width: tipChatState.elements.shell.offsetWidth,
+            height: tipChatState.elements.shell.offsetHeight,
+            x: Math.round(rect.left),
+            y: Math.round(rect.top)
+        });
+    }
+
+    function persistPanelVisibility(isOpen) {
+        ensureTipChatPrefs();
+        tipChatState.preferences.panelOpen = Boolean(isOpen);
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function persistPanelPinned(isPinned) {
+        ensureTipChatPrefs();
+        tipChatState.preferences.panelPinned = Boolean(isPinned);
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function getPreferredPeer() {
+        ensureTipChatPrefs();
+        return typeof tipChatState.preferences.lastPeer === 'string' ? tipChatState.preferences.lastPeer : null;
+    }
+
+    function persistPreferredPeer(peer) {
+        ensureTipChatPrefs();
+        tipChatState.preferences.lastPeer = peer || null;
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function persistThemePreference(theme) {
+        ensureTipChatPrefs();
+        tipChatState.preferences.theme = theme === 'light' ? 'light' : TIP_CHAT_DEFAULT_THEME;
+        tipChatState.currentTheme = tipChatState.preferences.theme;
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function persistPinnedPeers() {
+        ensureTipChatPrefs();
+        tipChatState.preferences.pinnedPeers = Array.from(tipChatState.pinnedConversations.values());
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
+    function persistDraftPeers() {
+        ensureTipChatPrefs();
+        const drafts = Array.from(tipChatState.manualPeers.entries()).map(([username, meta]) => ({
+            username,
+            ts: meta?.createdAt || Date.now()
+        }));
+        tipChatState.preferences.drafts = drafts;
+        saveTipChatPrefs(tipChatState.preferences);
+    }
+
     function loadTipChatRecords() {
         return safeJsonParse(localStorage.getItem(TIP_CHAT_STORAGE_KEY), []);
     }
@@ -2866,10 +3245,6 @@
             <a href="${SCRIPT_UPDATE_URL}" target="_blank" rel="noopener noreferrer">立即安装</a>
             <button class="tip-update-close" type="button">×</button>
         `;
-        const closeBtn = banner.querySelector('.tip-update-close');
-        closeBtn?.addEventListener('click', () => {
-            banner.remove();
-        });
         document.body.appendChild(banner);
     }
 
@@ -2900,6 +3275,59 @@
         } catch (err) {
             console.warn('检查脚本更新失败', err);
         }
+    }
+
+    function maybeShowChangelog() {
+        try {
+            const currentVersion = getCurrentScriptVersion();
+            if (!currentVersion) return;
+            const lastShown = localStorage.getItem(TIP_CHAT_CHANGELOG_KEY);
+            if (lastShown === currentVersion) return;
+            const entries = SCRIPT_CHANGELOG_ENTRIES[currentVersion];
+            if (!entries || !entries.length) {
+                localStorage.setItem(TIP_CHAT_CHANGELOG_KEY, currentVersion);
+                return;
+            }
+            showChangelogModal(currentVersion, entries);
+        } catch (err) {
+            console.warn('显示更新日志失败', err);
+        }
+    }
+
+    function showChangelogModal(version, entries) {
+        if (!document.body) {
+            try {
+                localStorage.setItem(TIP_CHAT_CHANGELOG_KEY, version);
+            } catch (_err) {}
+            return;
+        }
+        if (document.querySelector('.tip-changelog-overlay')) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'tip-changelog-overlay';
+        const safeItems = entries.map((item) => `<li>${escapeHtmlText(item)}</li>`).join('');
+        overlay.innerHTML = `
+            <div class="tip-changelog-modal">
+                <h3>脚本已更新至 v${escapeHtmlText(version)}</h3>
+                <div>本次更新内容：</div>
+                <ul>${safeItems}</ul>
+                <button type="button">知道了</button>
+            </div>
+        `;
+        const close = () => {
+            overlay.remove();
+            try {
+                localStorage.setItem(TIP_CHAT_CHANGELOG_KEY, version);
+            } catch (err) {
+                console.warn('记录更新日志状态失败', err);
+            }
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                close();
+            }
+        });
+        overlay.querySelector('button')?.addEventListener('click', close);
+        document.body.appendChild(overlay);
     }
 
     function trimTipRecords(records) {
@@ -2952,6 +3380,7 @@
         try {
             localStorage.removeItem(TIP_CHAT_STORAGE_KEY);
             localStorage.removeItem(TIP_CHAT_META_KEY);
+            localStorage.removeItem(TIP_CHAT_PREFS_KEY);
         } catch (err) {
             console.warn('清除本地缓存失败', err);
         }
@@ -2962,6 +3391,13 @@
         tipChatState.activePeer = null;
         tipChatState.pinned = false;
         tipChatState.refreshing = null;
+        tipChatState.preferences = null;
+        tipChatState.prefsLoaded = false;
+        tipChatState.uiPrefs = createDefaultPanelPrefs();
+        tipChatState.pinnedConversations = new Set();
+        tipChatState.manualPeers = new Map();
+        tipChatState.currentTheme = TIP_CHAT_DEFAULT_THEME;
+        applyTipChatTheme(TIP_CHAT_DEFAULT_THEME);
         saveTipChatMeta({ latestId: null, lastSeenId: null, updatedAt: Date.now() });
         updateTipChatPinUI();
         updateLauncherBadge(false);
@@ -2991,6 +3427,26 @@
         if (!href) return null;
         const match = href.match(/\/member\/([^\/?#]+)/);
         return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function normalizePeerInput(name) {
+        return (name || '').trim();
+    }
+
+    function findPeerCaseInsensitive(name) {
+        const normalized = normalizePeerInput(name);
+        if (!normalized) return null;
+        const target = normalized.toLowerCase();
+        const peers = new Set([
+            ...Array.from(tipChatState.conversationMap?.keys() || []),
+            ...Array.from(tipChatState.manualPeers?.keys() || [])
+        ]);
+        for (const peer of peers) {
+            if (typeof peer === 'string' && peer.toLowerCase() === target) {
+                return peer;
+            }
+        }
+        return null;
     }
 
     function extractSignatureId(link) {
@@ -3313,6 +3769,36 @@
             nextMap.set(key, list);
         });
         tipChatState.conversationMap = nextMap;
+        const lowerCasePeers = new Map();
+        tipChatState.conversationMap.forEach((_, key) => {
+            if (typeof key === 'string') {
+                lowerCasePeers.set(key.toLowerCase(), key);
+            }
+        });
+        let draftsChanged = false;
+        (tipChatState.manualPeers || new Map()).forEach((meta, peer) => {
+            const normalized = normalizePeerInput(peer);
+            if (!normalized) {
+                tipChatState.manualPeers.delete(peer);
+                draftsChanged = true;
+                return;
+            }
+            const matchedKey = lowerCasePeers.get(normalized.toLowerCase());
+            if (matchedKey) {
+                const hasRecords = (tipChatState.conversationMap.get(matchedKey)?.length || 0) > 0;
+                if (hasRecords && tipChatState.manualPeers.delete(peer)) {
+                    draftsChanged = true;
+                }
+                return;
+            }
+            if (!tipChatState.conversationMap.has(normalized)) {
+                tipChatState.conversationMap.set(normalized, []);
+                lowerCasePeers.set(normalized.toLowerCase(), normalized);
+            }
+        });
+        if (draftsChanged) {
+            persistDraftPeers();
+        }
     }
 
     function resolveAvatarForUser(username, records) {
@@ -3402,23 +3888,68 @@
     }
 
     function getConversationSummaries() {
+        ensureTipChatPrefs();
         const summaries = [];
-        tipChatState.conversationMap.forEach((records, peer) => {
-            if (!records.length) return;
-            const last = records[records.length - 1];
+        const pinnedSet = tipChatState.pinnedConversations || new Set();
+        let draftsChanged = false;
+        tipChatState.conversationMap.forEach((records = [], peer) => {
+            const manualMeta = tipChatState.manualPeers.get(peer);
+            if (!records.length && !manualMeta) return;
+            if (records.length) {
+                const last = records[records.length - 1];
+                summaries.push({
+                    peer,
+                    lastMessage: formatRecordPreview(last),
+                    lastTimestamp: last.timestamp || 0,
+                    avatar: resolveAvatarForUser(peer, records),
+                    pinned: pinnedSet.has(peer),
+                    isDraft: false
+                });
+                if (manualMeta) {
+                    tipChatState.manualPeers.delete(peer);
+                    draftsChanged = true;
+                }
+            } else {
+                summaries.push({
+                    peer,
+                    lastMessage: '准备开始对话',
+                    lastTimestamp: manualMeta?.createdAt || Date.now(),
+                    avatar: resolveAvatarForUser(peer, records),
+                    pinned: pinnedSet.has(peer),
+                    isDraft: true
+                });
+            }
+        });
+        tipChatState.manualPeers.forEach((meta, peer) => {
+            if (tipChatState.conversationMap.has(peer)) return;
+            tipChatState.conversationMap.set(peer, []);
             summaries.push({
                 peer,
-                lastMessage: formatRecordPreview(last),
-                lastTimestamp: last.timestamp || 0,
-                avatar: resolveAvatarForUser(peer, records)
+                lastMessage: '准备开始对话',
+                lastTimestamp: meta?.createdAt || Date.now(),
+                avatar: resolveAvatarForUser(peer),
+                pinned: pinnedSet.has(peer),
+                isDraft: true
             });
         });
-        summaries.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+        if (draftsChanged) {
+            persistDraftPeers();
+        }
+        summaries.sort((a, b) => {
+            const aPinned = a.pinned ? 1 : 0;
+            const bPinned = b.pinned ? 1 : 0;
+            if (aPinned !== bPinned) {
+                return aPinned ? -1 : 1;
+            }
+            return (b.lastTimestamp || 0) - (a.lastTimestamp || 0);
+        });
         return summaries;
     }
 
     function createTipChatUIIfNeeded() {
         if (tipChatState.elements.launcher || !document.body) return;
+
+        ensureTipChatPrefs();
 
         const launcher = document.createElement('button');
         launcher.type = 'button';
@@ -3443,10 +3974,11 @@
                             <div class="tip-chat-subtitle">基于$V2EX打赏记录</div>
                         </div>
                         <div class="tip-chat-sidebar-actions">
+                            <button class="tip-chat-icon-btn tip-chat-new" title="发起新会话">＋</button>
+                            <button class="tip-chat-icon-btn tip-chat-theme" title="切换主题">日</button>
                             <button class="tip-chat-pin-btn" title="固定面板">PIN</button>
                             <button class="tip-chat-icon-btn tip-chat-refresh" title="刷新">R</button>
-                            <button class="tip-chat-icon-btn tip-chat-clear" title="清除本地缓存">D</button>
-                            <button class="tip-chat-icon-btn tip-chat-close" title="关闭">X</button>
+                            <button class="tip-chat-icon-btn tip-chat-clear" title="清除本地缓存">C</button>
                         </div>
                     </div>
                     <div class="tip-chat-conversation-list" id="tip-chat-conversation-list"></div>
@@ -3458,6 +3990,7 @@
                             <div class="tip-chat-thread-meta" id="tip-chat-thread-meta">最近 30 条消息</div>
                         </div>
                         <div class="tip-chat-thread-actions">
+                            <button class="tip-chat-thread-pin-btn" id="tip-chat-thread-pin-btn" type="button" title="置顶当前会话">置顶</button>
                             <button class="tip-chat-thread-tip-btn" id="tip-chat-tip-btn" type="button" title="打赏当前会话">赏</button>
                         </div>
                     </div>
@@ -3474,26 +4007,32 @@
             </div>
         `;
         document.body.appendChild(panel);
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'tip-chat-resize-handle';
+        panel.appendChild(resizeHandle);
 
         tipChatState.elements = {
             launcher,
             launcherIndicator: indicator,
             panel,
+            shell: panel.querySelector('.tip-chat-shell'),
             conversationList: panel.querySelector('#tip-chat-conversation-list'),
             threadList: panel.querySelector('#tip-chat-thread-list'),
             threadTitle: panel.querySelector('#tip-chat-thread-title'),
             threadMeta: panel.querySelector('#tip-chat-thread-meta'),
             threadTipBtn: panel.querySelector('#tip-chat-tip-btn'),
+            threadPinBtn: panel.querySelector('#tip-chat-thread-pin-btn'),
             composerInput: panel.querySelector('#tip-chat-composer-input'),
             composerSendBtn: panel.querySelector('#tip-chat-send-btn'),
             pinBtn: panel.querySelector('.tip-chat-pin-btn'),
+            newChatBtn: panel.querySelector('.tip-chat-new'),
+            themeBtn: panel.querySelector('.tip-chat-theme'),
             refreshBtn: panel.querySelector('.tip-chat-refresh'),
             clearBtn: panel.querySelector('.tip-chat-clear'),
-            closeBtn: panel.querySelector('.tip-chat-close')
+            resizeHandle
         };
 
         launcher.addEventListener('click', () => toggleTipChatPanel());
-        tipChatState.elements.closeBtn.addEventListener('click', () => toggleTipChatPanel(false));
         tipChatState.elements.refreshBtn.addEventListener('click', () => {
             refreshTipChatData({ forceFull: needsTipChatBootstrap(), repair: true });
         });
@@ -3511,20 +4050,34 @@
                 toggleTipChatPinned();
             });
         }
+        if (tipChatState.elements.newChatBtn) {
+            tipChatState.elements.newChatBtn.addEventListener('click', handleCreateTipChatConversation);
+        }
+        if (tipChatState.elements.themeBtn) {
+            tipChatState.elements.themeBtn.addEventListener('click', handleTipThemeToggle);
+        }
         if (tipChatState.elements.composerSendBtn) {
             tipChatState.elements.composerSendBtn.addEventListener('click', handleTipChatComposerSend);
         }
         if (tipChatState.elements.composerInput) {
-            tipChatState.elements.composerInput.addEventListener('keydown', (event) => {
+            const composerInput = tipChatState.elements.composerInput;
+            composerInput.addEventListener('keydown', (event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                     event.preventDefault();
                     handleTipChatComposerSend();
                 }
             });
+            composerInput.addEventListener('input', autoResizeComposerInput);
         }
         if (tipChatState.elements.threadTipBtn) {
             tipChatState.elements.threadTipBtn.hidden = true;
             tipChatState.elements.threadTipBtn.addEventListener('click', handleTipChatThreadTip);
+        }
+        if (tipChatState.elements.threadPinBtn) {
+            tipChatState.elements.threadPinBtn.addEventListener('click', handleThreadPinToggle);
+        }
+        if (tipChatState.elements.conversationList) {
+            tipChatState.elements.conversationList.addEventListener('click', handleTipConversationListClick);
         }
         tipChatState.elements.threadList.addEventListener('scroll', handleTipChatScroll);
         updateTipChatPinUI();
@@ -3544,7 +4097,12 @@
         };
         tipChatState.elements.handleGlobalClick = handleGlobalClick;
         document.addEventListener('click', handleGlobalClick);
+        applyTipChatUIPrefs();
+        initTipChatPanelInteractions();
+        window.addEventListener('resize', clampTipChatPanelWithinViewport);
+        autoResizeComposerInput();
         updateTipComposerState({ preserveStatus: false });
+        updateThreadPinButton();
     }
 
     function updateLauncherBadge(hasNew) {
@@ -3562,6 +4120,7 @@
         if (!panel) return;
         const shouldOpen = typeof force === 'boolean' ? force : !panel.classList.contains('open');
         panel.classList.toggle('open', shouldOpen);
+        persistPanelVisibility(shouldOpen);
         if (shouldOpen) {
             const hadUnreadIndicator = Boolean(tipChatState.elements.launcherIndicator && !tipChatState.elements.launcherIndicator.hidden);
             syncTipChatStateFromStorage();
@@ -3574,7 +4133,10 @@
             renderTipConversationList();
             renderTipThread();
             maybeRefreshTipChatOnOpen();
+            autoResizeComposerInput();
+            return;
         }
+        persistPanelPrefsFromRect();
     }
 
     function shouldReloadAfterUnreadOpen(hadUnreadIndicator) {
@@ -3586,6 +4148,7 @@
     function toggleTipChatPinned(force) {
         const next = typeof force === 'boolean' ? force : !tipChatState.pinned;
         tipChatState.pinned = next;
+        persistPanelPinned(next);
         updateTipChatPinUI();
     }
 
@@ -3601,6 +4164,163 @@
         if (panel) {
             panel.classList.toggle('pinned', pinned);
         }
+    }
+
+    function applyTipChatUIPrefs() {
+        ensureTipChatPrefs();
+        const panel = tipChatState.elements.panel;
+        const shell = tipChatState.elements.shell;
+        if (!panel || !shell) return;
+        const prefs = tipChatState.uiPrefs || {};
+        const { width, height } = prefs;
+        let { x, y } = prefs;
+        if (Number.isFinite(width) && width > 0) {
+            shell.style.width = `${width}px`;
+        } else {
+            shell.style.width = '';
+        }
+        if (Number.isFinite(height) && height > 0) {
+            shell.style.height = `${height}px`;
+        } else {
+            shell.style.height = '';
+        }
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            const shellWidth = shell.offsetWidth || TIP_CHAT_MIN_WIDTH;
+            const shellHeight = shell.offsetHeight || TIP_CHAT_MIN_HEIGHT;
+            const centeredX = Math.max(10, Math.round((window.innerWidth - shellWidth) / 2));
+            const centeredY = Math.max(20, Math.round((window.innerHeight - shellHeight) / 2));
+            x = centeredX;
+            y = centeredY;
+            persistPanelPrefs({ x: centeredX, y: centeredY });
+        }
+        const hasCoords = Number.isFinite(x) && Number.isFinite(y);
+        panel.classList.toggle('custom-position', hasCoords);
+        if (hasCoords) {
+            panel.style.left = `${x}px`;
+            panel.style.top = `${y}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+        } else {
+            panel.style.left = '';
+            panel.style.top = '';
+            panel.style.right = '26px';
+            panel.style.bottom = '90px';
+        }
+        applyTipChatTheme(tipChatState.preferences?.theme || TIP_CHAT_DEFAULT_THEME);
+    }
+
+    function applyTipChatTheme(theme) {
+        const resolved = theme === 'light' ? 'light' : TIP_CHAT_DEFAULT_THEME;
+        tipChatState.currentTheme = resolved;
+        if (tipChatState.elements.panel) {
+            tipChatState.elements.panel.classList.toggle('theme-light', resolved === 'light');
+        }
+        const btn = tipChatState.elements.themeBtn;
+        if (btn) {
+            const isLight = resolved === 'light';
+            btn.textContent = isLight ? '月' : '日';
+            btn.title = isLight ? '切换为暗色主题' : '切换为亮色主题';
+        }
+    }
+
+    function initTipChatPanelInteractions() {
+        const panel = tipChatState.elements.panel;
+        if (!panel || !tipChatState.elements.shell) return;
+        const dragHandles = panel.querySelectorAll('.tip-chat-sidebar-header, .tip-chat-thread-header');
+        dragHandles.forEach((handle) => {
+            handle.classList.add('tip-chat-draggable');
+            handle.addEventListener('pointerdown', startTipChatPanelDrag);
+        });
+        if (tipChatState.elements.resizeHandle) {
+            tipChatState.elements.resizeHandle.addEventListener('pointerdown', startTipChatPanelResize);
+        }
+        clampTipChatPanelWithinViewport();
+    }
+
+    function startTipChatPanelDrag(event) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        if (event.target.closest('button, a, textarea, input')) return;
+        const panel = tipChatState.elements.panel;
+        const shell = tipChatState.elements.shell;
+        if (!panel) return;
+        event.preventDefault();
+        const rect = panel.getBoundingClientRect();
+        const offsetX = event.clientX - rect.left;
+        const offsetY = event.clientY - rect.top;
+        const panelWidth = shell?.offsetWidth || rect.width;
+        const panelHeight = shell?.offsetHeight || rect.height;
+        panel.classList.add('dragging');
+        const onMove = (moveEvent) => {
+            moveEvent.preventDefault();
+            const maxX = Math.max(10, window.innerWidth - panelWidth - 10);
+            const maxY = Math.max(10, window.innerHeight - panelHeight - 10);
+            const nextX = clamp(moveEvent.clientX - offsetX, 10, maxX);
+            const nextY = clamp(moveEvent.clientY - offsetY, 10, maxY);
+            panel.style.left = `${nextX}px`;
+            panel.style.top = `${nextY}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            panel.classList.add('custom-position');
+        };
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            panel.classList.remove('dragging');
+            persistPanelPrefsFromRect();
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }
+
+    function startTipChatPanelResize(event) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        const shell = tipChatState.elements.shell;
+        if (!shell) return;
+        event.preventDefault();
+        const startWidth = shell.offsetWidth;
+        const startHeight = shell.offsetHeight;
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const onMove = (moveEvent) => {
+            moveEvent.preventDefault();
+            const deltaX = moveEvent.clientX - startX;
+            const deltaY = moveEvent.clientY - startY;
+            const maxWidth = Math.max(TIP_CHAT_MIN_WIDTH, window.innerWidth - 40);
+            const maxHeight = Math.max(TIP_CHAT_MIN_HEIGHT, window.innerHeight - 80);
+            const nextWidth = clamp(startWidth + deltaX, TIP_CHAT_MIN_WIDTH, maxWidth);
+            const nextHeight = clamp(startHeight + deltaY, TIP_CHAT_MIN_HEIGHT, maxHeight);
+            shell.style.width = `${nextWidth}px`;
+            shell.style.height = `${nextHeight}px`;
+        };
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            persistPanelPrefs({
+                width: parseInt(shell.style.width, 10) || startWidth,
+                height: parseInt(shell.style.height, 10) || startHeight
+            });
+            clampTipChatPanelWithinViewport();
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }
+
+    function clampTipChatPanelWithinViewport() {
+        const panel = tipChatState.elements.panel;
+        const shell = tipChatState.elements.shell;
+        if (!panel || !shell) return;
+        const { x, y } = tipChatState.uiPrefs || {};
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        const width = shell.offsetWidth;
+        const height = shell.offsetHeight;
+        const maxX = Math.max(10, window.innerWidth - width - 10);
+        const maxY = Math.max(10, window.innerHeight - height - 10);
+        const clampedX = clamp(x, 10, maxX);
+        const clampedY = clamp(y, 10, maxY);
+        if (clampedX !== x || clampedY !== y) {
+            persistPanelPrefs({ x: clampedX, y: clampedY });
+        }
+        applyTipChatUIPrefs();
     }
 
     function maybeRefreshTipChatOnOpen() {
@@ -3633,7 +4353,7 @@
  
     function createTipChatBootstrapCallout({ className = 'tip-chat-conversation-empty', message } = {}) {
         const wrapper = document.createElement('div');
-        wrapper.className = className;
+        wrapper.className = `${className} tip-chat-bootstrap-callout`;
         const text = document.createElement('div');
         text.textContent = message || '首次使用需要同步全部打赏记录，点击下方按钮即可开始。';
         wrapper.appendChild(text);
@@ -3642,13 +4362,36 @@
         btn.className = 'tip-chat-cta-btn';
         if (tipChatState.refreshing) {
             btn.disabled = true;
+            btn.classList.add('loading');
             btn.textContent = '同步中...';
         } else {
             btn.textContent = '立即同步';
         }
         btn.addEventListener('click', () => triggerTipChatBootstrap(btn));
         wrapper.appendChild(btn);
+        const status = document.createElement('div');
+        status.className = 'tip-chat-bootstrap-status';
+        status.textContent = tipChatState.refreshing ? '正在同步，请稍候...' : '';
+        status.hidden = !status.textContent;
+        wrapper.appendChild(status);
         return wrapper;
+    }
+
+    function updateBootstrapCallouts({ loading = false, message = '' } = {}) {
+        const wrappers = document.querySelectorAll('.tip-chat-bootstrap-callout');
+        wrappers.forEach((callout) => {
+            const btn = callout.querySelector('.tip-chat-cta-btn');
+            const status = callout.querySelector('.tip-chat-bootstrap-status');
+            if (btn) {
+                btn.disabled = loading;
+                btn.classList.toggle('loading', loading);
+                btn.textContent = loading ? '同步中...' : '立即同步';
+            }
+            if (status) {
+                status.textContent = message || (loading ? '正在同步，请稍候...' : '');
+                status.hidden = !status.textContent;
+            }
+        });
     }
  
     function triggerTipChatBootstrap(button) {
@@ -3656,8 +4399,10 @@
         const shouldReloadAfter = needsTipChatBootstrap();
         if (button) {
             button.disabled = true;
+            button.classList.add('loading');
             button.textContent = '同步中...';
         }
+        updateBootstrapCallouts({ loading: true, message: '正在同步，请稍候...' });
         const promise = refreshTipChatData({ forceFull: true }).then(() => {
             tipChatState.summaries = getConversationSummaries();
             renderTipConversationList();
@@ -3668,8 +4413,10 @@
         }).finally(() => {
             if (button) {
                 button.disabled = false;
+                button.classList.remove('loading');
                 button.textContent = '重新同步';
             }
+            updateBootstrapCallouts({ loading: false });
         });
         return promise;
     }
@@ -3705,8 +4452,15 @@
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'tip-chat-conversation-item';
+            item.dataset.peer = summary.peer;
             if (summary.peer === tipChatState.activePeer) {
                 item.classList.add('active');
+            }
+            if (summary.pinned) {
+                item.classList.add('pinned');
+            }
+            if (summary.isDraft) {
+                item.dataset.draft = '1';
             }
             const avatarWrap = document.createElement('div');
             avatarWrap.className = 'tip-chat-avatar';
@@ -3723,27 +4477,48 @@
             const header = document.createElement('header');
             const nameSpan = document.createElement('span');
             nameSpan.textContent = `@${summary.peer}`;
+            if (summary.pinned) {
+                const pinLabel = document.createElement('span');
+                pinLabel.className = 'tip-chat-conversation-pin-label';
+                pinLabel.textContent = '📌';
+                nameSpan.appendChild(pinLabel);
+            }
             const timeSpan = document.createElement('span');
             timeSpan.textContent = summary.lastTimestamp ? formatAbsoluteTime(summary.lastTimestamp) : '';
             header.appendChild(nameSpan);
             header.appendChild(timeSpan);
             const preview = document.createElement('div');
             preview.className = 'tip-chat-conversation-preview';
-            preview.textContent = summary.lastMessage || '';
+            preview.textContent = summary.isDraft ? '尚未开始对话，发送第一条消息吧' : (summary.lastMessage || '');
             metaWrap.appendChild(header);
             metaWrap.appendChild(preview);
             item.appendChild(avatarWrap);
             item.appendChild(metaWrap);
-            item.addEventListener('click', () => setActiveTipConversation(summary.peer));
             container.appendChild(item);
+        });
+        updateActiveConversationHighlight();
+    }
+
+    function updateActiveConversationHighlight() {
+        const container = tipChatState.elements.conversationList;
+        if (!container) return;
+        const activePeer = tipChatState.activePeer;
+        container.querySelectorAll('.tip-chat-conversation-item').forEach((item) => {
+            item.classList.toggle('active', item.dataset.peer === activePeer);
         });
     }
 
     function ensureActiveTipPeer() {
         if (!tipChatState.summaries.length) return;
         const current = tipChatState.activePeer;
-        if (current && tipChatState.conversationMap.has(current)) return;
-        const fallback = tipChatState.summaries.find(summary => tipChatState.conversationMap.has(summary.peer))
+        const hasCurrent = current && (tipChatState.conversationMap.has(current) || tipChatState.manualPeers.has(current));
+        if (hasCurrent) return;
+        const preferred = getPreferredPeer();
+        if (preferred && (tipChatState.conversationMap.has(preferred) || tipChatState.manualPeers.has(preferred))) {
+            tipChatState.activePeer = preferred;
+            return;
+        }
+        const fallback = tipChatState.summaries.find((summary) => tipChatState.conversationMap.has(summary.peer) || tipChatState.manualPeers.has(summary.peer))
             || tipChatState.summaries[0];
         tipChatState.activePeer = fallback?.peer || null;
     }
@@ -3769,13 +4544,6 @@
         if (!container) return;
         const peer = tipChatState.activePeer;
         const hasPeerThread = Boolean(peer && tipChatState.conversationMap.has(peer));
-        if (tipBtn) {
-            tipBtn.classList.remove('loading');
-            tipBtn.textContent = '赏';
-            tipBtn.disabled = !hasPeerThread;
-            tipBtn.hidden = !hasPeerThread;
-            tipBtn.title = hasPeerThread ? `打赏 @${peer}` : '选择会话后可打赏';
-        }
         if (!hasPeerThread) {
             const prevPeer = peer;
             ensureActiveTipPeer();
@@ -3806,6 +4574,23 @@
         if (titleEl) titleEl.textContent = `@${peer}`;
         const records = tipChatState.conversationMap.get(peer) || [];
         const total = records.length;
+        if (tipBtn) {
+            tipBtn.classList.remove('loading');
+            tipBtn.textContent = '赏';
+            tipBtn.hidden = !hasPeerThread;
+            tipBtn.disabled = !hasPeerThread || total === 0;
+            tipBtn.title = total === 0 ? '发送第一条消息后可打赏' : `打赏 @${peer}`;
+        }
+        updateThreadPinButton();
+        if (total === 0) {
+            container.innerHTML = '';
+            const emptyHint = document.createElement('div');
+            emptyHint.className = 'tip-chat-empty';
+            emptyHint.textContent = peer ? `给 @${peer} 发送第一条消息吧` : '发送第一条消息吧';
+            container.appendChild(emptyHint);
+            if (metaEl) metaEl.textContent = '尚无记录';
+            return;
+        }
         const visibleCount = getVisibleCount(peer, total);
         if (metaEl) metaEl.textContent = `共 ${total} 条 · 正在显示最近 ${visibleCount} 条`;
         const startIndex = Math.max(0, total - visibleCount);
@@ -3886,6 +4671,91 @@
         } else if (!tipChatState.userScrolledUp) {
             container.scrollTop = container.scrollHeight;
         }
+    }
+
+    function scrollTipThreadToBottom(force = false) {
+        const container = tipChatState.elements.threadList;
+        if (!container) return;
+        if (!force && tipChatState.userScrolledUp) return;
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function scrollActiveConversationIntoView({ smooth = false } = {}) {
+        const container = tipChatState.elements.conversationList;
+        if (!container) return;
+        const activeItem = container.querySelector('.tip-chat-conversation-item.active');
+        if (!activeItem) return;
+        const itemTop = activeItem.offsetTop;
+        const itemBottom = itemTop + activeItem.offsetHeight;
+        const viewTop = container.scrollTop;
+        const viewBottom = viewTop + container.clientHeight;
+        let nextTop = null;
+        if (itemTop < viewTop) {
+            nextTop = itemTop - 8;
+        } else if (itemBottom > viewBottom) {
+            nextTop = itemBottom - container.clientHeight + 8;
+        }
+        if (nextTop === null) return;
+        const targetTop = nextTop < 0 ? 0 : nextTop;
+        if (smooth && typeof container.scrollTo === 'function') {
+            container.scrollTo({ top: targetTop, behavior: 'smooth' });
+            return;
+        }
+        container.scrollTop = targetTop;
+    }
+
+    function scheduleActiveConversationRender({ ensureVisible = false } = {}) {
+        const raf = (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+            ? window.requestAnimationFrame.bind(window)
+            : (fn) => setTimeout(fn, 16);
+        const caf = (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function')
+            ? window.cancelAnimationFrame.bind(window)
+            : clearTimeout;
+        if (pendingConversationRenderFrame) {
+            caf(pendingConversationRenderFrame);
+        }
+        pendingConversationRenderFrame = raf(() => {
+            pendingConversationRenderFrame = null;
+            updateActiveConversationHighlight();
+            renderTipThread();
+            scrollTipThreadToBottom();
+            if (ensureVisible) {
+                scrollActiveConversationIntoView({ smooth: true });
+            }
+        });
+    }
+
+    function updateThreadPinButton() {
+        const btn = tipChatState.elements.threadPinBtn;
+        if (!btn) return;
+        const peer = tipChatState.activePeer;
+        const isPinned = Boolean(peer && tipChatState.pinnedConversations?.has(peer));
+        btn.disabled = !peer;
+        btn.textContent = isPinned ? '取消置顶' : '置顶';
+        btn.classList.toggle('pinned', isPinned);
+    }
+
+    function handleThreadPinToggle() {
+        const peer = tipChatState.activePeer;
+        if (!peer) return;
+        toggleConversationPin(peer);
+    }
+
+    function toggleConversationPin(peer) {
+        if (!peer) return;
+        ensureTipChatPrefs();
+        if (!tipChatState.pinnedConversations) {
+            tipChatState.pinnedConversations = new Set();
+        }
+        if (tipChatState.pinnedConversations.has(peer)) {
+            tipChatState.pinnedConversations.delete(peer);
+        } else {
+            tipChatState.pinnedConversations.add(peer);
+        }
+        persistPinnedPeers();
+        tipChatState.summaries = getConversationSummaries();
+        renderTipConversationList();
+        updateThreadPinButton();
     }
 
     function getLatestTipChatMessageText(peer) {
@@ -4086,14 +4956,7 @@
                 id: quoteId
             };
             composer.value = composed;
-
-            // 提升输入框高度以容纳引用
-            const desiredHeight = 96;
-            const currentHeight = parseInt(window.getComputedStyle(composer).height, 10) || 0;
-            if (currentHeight < desiredHeight) {
-                composer.style.minHeight = `${desiredHeight}px`;
-                composer.style.height = `${desiredHeight}px`;
-            }
+            autoResizeComposerInput();
 
             composer.focus();
             // 将光标移到最后一行，便于继续输入
@@ -4183,6 +5046,19 @@
                 sendBtn.textContent = '发送';
             }
         }
+        autoResizeComposerInput();
+    }
+
+    function autoResizeComposerInput() {
+        const input = tipChatState.elements.composerInput;
+        if (!input) return;
+        input.style.height = 'auto';
+        const lineHeight = parseFloat(window.getComputedStyle(input).lineHeight) || 18;
+        const maxHeight = lineHeight * TIP_CHAT_COMPOSER_MAX_LINES + 16;
+        const baseHeight = Math.max(lineHeight + 12, 32);
+        const contentHeight = input.scrollHeight || baseHeight;
+        const nextHeight = Math.min(maxHeight, Math.max(baseHeight, contentHeight));
+        input.style.height = `${nextHeight}px`;
     }
 
     async function handleTipChatComposerSend() {
@@ -4230,6 +5106,7 @@
                 onStatus: (msg) => updateTipComposerState({ message: msg, preserveStatus: true })
             });
             input.value = '';
+            autoResizeComposerInput();
             const meAvatar = resolveAvatarForUser(me, tipChatState.records) || findInlineAvatarForUsername(me) || null;
             if (meAvatar) {
                 memberAvatarCache.set(me, meAvatar);
@@ -4270,6 +5147,11 @@
         const nextRecords = Array.isArray(tipChatState.records) ? [...tipChatState.records, normalized] : [normalized];
         const trimmed = trimTipRecords(nextRecords);
         tipChatState.records = trimmed;
+        const me = resolveTipChatCurrentUser();
+        const peerUser = me ? (normalized.from === me ? normalized.to : normalized.from) : null;
+        if (peerUser && tipChatState.manualPeers.delete(peerUser)) {
+            persistDraftPeers();
+        }
         saveTipChatRecords(trimmed);
         rebuildTipConversationMap();
         tipChatState.summaries = getConversationSummaries();
@@ -4283,19 +5165,90 @@
         updateLauncherBadge(false);
         renderTipConversationList();
         renderTipThread();
+        scrollTipThreadToBottom();
     }
 
-    function setActiveTipConversation(peer) {
+    function setActiveTipConversation(peer, options = {}) {
         if (!peer) return;
-        tipChatState.activePeer = peer;
-        if (!tipChatState.visibleCountMap.has(peer)) {
-            const total = tipChatState.conversationMap.get(peer)?.length || 0;
-            tipChatState.visibleCountMap.set(peer, Math.min(TIP_CHAT_INITIAL_LOAD, total));
+        const { force = false, ensureVisible = false } = options;
+        const canonicalPeer = findPeerCaseInsensitive(peer) || peer;
+        if (!force && tipChatState.activePeer === canonicalPeer) {
+            scrollTipThreadToBottom();
+            if (ensureVisible) {
+                scrollActiveConversationIntoView({ smooth: true });
+            }
+            return;
         }
-        ensureAvatarForPeer(peer);
+        tipChatState.activePeer = canonicalPeer;
+        if (!tipChatState.visibleCountMap.has(canonicalPeer)) {
+            const total = tipChatState.conversationMap.get(canonicalPeer)?.length || 0;
+            const initial = total ? Math.min(TIP_CHAT_INITIAL_LOAD, total) : 0;
+            tipChatState.visibleCountMap.set(canonicalPeer, initial);
+        }
+        ensureAvatarForPeer(canonicalPeer);
         tipChatState.userScrolledUp = false;
+        persistPreferredPeer(canonicalPeer);
+        scheduleActiveConversationRender({ ensureVisible });
+    }
+
+    function handleTipConversationListClick(event) {
+        const target = event.target.closest('.tip-chat-conversation-item');
+        if (!target) return;
+        const peer = target.dataset.peer;
+        if (!peer) return;
+        event.preventDefault();
+        setActiveTipConversation(peer);
+    }
+
+    function ensureManualConversation(peer) {
+        const normalized = normalizePeerInput(peer);
+        if (!normalized) return null;
+        const existing = findPeerCaseInsensitive(normalized);
+        if (existing) {
+            return existing;
+        }
+        ensureTipChatPrefs();
+        const createdAt = Date.now();
+        tipChatState.manualPeers.set(normalized, { peer: normalized, createdAt });
+        if (!tipChatState.conversationMap.has(normalized)) {
+            tipChatState.conversationMap.set(normalized, []);
+        }
+        persistDraftPeers();
+        tipChatState.summaries = getConversationSummaries();
         renderTipConversationList();
-        renderTipThread();
+        return normalized;
+    }
+
+    async function handleCreateTipChatConversation() {
+        const newChatBtn = tipChatState.elements.newChatBtn;
+        const input = prompt('请输入想要聊天的用户名（不含 @）');
+        if (!input) return;
+        const username = input.replace(/^@/, '').trim();
+        if (!username) return;
+        if (newChatBtn) {
+            newChatBtn.classList.add('loading');
+        }
+        try {
+            const address = await getUserAddress(username).catch(() => null);
+            if (!address) {
+                alert('该用户不存在或未绑定solana地址');
+                return;
+            }
+            const peer = ensureManualConversation(username) || findPeerCaseInsensitive(username) || username;
+            setActiveTipConversation(peer, { force: true, ensureVisible: true });
+            updateTipComposerState();
+            autoResizeComposerInput();
+        } finally {
+            if (newChatBtn) {
+                newChatBtn.classList.remove('loading');
+            }
+        }
+    }
+
+    function handleTipThemeToggle() {
+        const nextTheme = tipChatState.currentTheme === 'light' ? 'dark' : 'light';
+        persistThemePreference(nextTheme);
+        applyTipChatTheme(nextTheme);
     }
 
     function handleTipChatScroll() {
@@ -4319,7 +5272,7 @@
         if (!btn) return;
         btn.classList.toggle('loading', Boolean(isLoading));
         btn.disabled = Boolean(isLoading);
-        btn.textContent = isLoading ? '…' : '⟳';
+        btn.textContent = isLoading ? '…' : 'R';
     }
 
     function scheduleTipChatRefresh() {
@@ -4372,6 +5325,7 @@
         }).finally(() => {
             tipChatState.refreshing = null;
             updateRefreshUI(false);
+            updateBootstrapCallouts({ loading: false });
         });
         tipChatState.refreshing = refreshPromise;
         return refreshPromise;
@@ -4538,6 +5492,7 @@
 
     function initTipChat() {
         if (tipChatInitialized) return;
+        ensureTipChatPrefs();
         const currentUser = resolveTipChatCurrentUser();
         if (!currentUser) return;
         createTipChatUIIfNeeded();
@@ -4549,6 +5504,9 @@
         updateLauncherBadge(Boolean(meta.latestId && meta.lastSeenId !== meta.latestId));
         renderTipConversationList();
         renderTipThread();
+        if (tipChatState.preferences?.panelOpen) {
+            toggleTipChatPanel(true);
+        }
         scheduleTipChatRefresh();
         if (meta.latestId) {
             refreshTipChatData({ forceFull: false }).catch(() => {});
@@ -4879,6 +5837,7 @@
         initQuickThank();
         initTipChat();
         scheduleScriptUpdateCheck();
+        maybeShowChangelog();
         
         // 监听DOM变化（如果页面动态加载内容）
         const observer = new MutationObserver(() => {
