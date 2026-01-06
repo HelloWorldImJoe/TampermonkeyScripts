@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.3.3
+// @version      1.3.4
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -2017,11 +2017,8 @@
             
             showMessage('交易已发送，等待确认...', 'info');
 
-            // 延时两秒，等待区块链网络处理
-            await new Promise(resolve => setTimeout(()=>{
-                waitForTransaction(signature);
-                resolve();
-            }, 2000));
+            // 等待交易确认（每0.2秒查询一次状态）
+            await waitForTransaction(signature);
 
             const defaultPostscript = options.defaultPostscript || '';
             const replyContent = buildReplyContent({ replyText, replyId, options });
@@ -2177,7 +2174,7 @@
                 } catch (err) {
                     console.error('检查交易状态失败:', err);
                 }
-            }, 2000);
+            }, 200);
         });
     }
 
