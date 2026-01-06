@@ -79,7 +79,6 @@
     // 手动刷新修复页数上限
     const TIP_CHAT_REPAIR_PAGES = 6;
     // 聊天是否已初始化标志
-    // 聊天是否已初始化标志
     let tipChatInitialized = false;
     // 升级检测是否已安排
     let scriptUpdateCheckScheduled = false;
