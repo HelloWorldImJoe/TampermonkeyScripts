@@ -2075,7 +2075,8 @@
 
         } catch (error) {
             console.error('打赏失败:', error);
-            showMessage(error.message || '打赏失败，请重试', 'error');
+            const failMsg = (error.message || '打赏失败，请重试') + '。建议完全退出 Chrome 并重新打开后再试。';
+            showMessage(failMsg, 'error');
         } finally {
             confirmBtn.disabled = false;
         }
@@ -4042,7 +4043,7 @@
                 });
             } catch (err) {
                 console.error('打赏失败:', err);
-                alert('打赏失败: ' + (err.message || '未知错误'));
+                alert(`打赏失败: ${(err.message || '未知错误')}\n建议完全退出 Chrome 并重新打开后再试。`);
             }
         };
         
