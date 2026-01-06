@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -90,6 +90,22 @@
             color: var(--dm-accent, #3b82f6);
             background: rgba(59, 130, 246, 0.18);
             border-color: rgba(59, 130, 246, 0.65);
+        }
+
+        /* Hover-only controls for reply rows */
+        .cell[id^="r_"] tr .tip-button,
+        .cell[id^="r_"] tr .dm-btn {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(2px);
+            transition: opacity 0.16s ease, transform 0.16s ease;
+        }
+
+        .cell[id^="r_"] tr:hover .tip-button,
+        .cell[id^="r_"] tr:hover .dm-btn {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
         }
 
         .tip-button.loading {
@@ -836,7 +852,7 @@
             align-self: flex-end;
             flex-direction: row-reverse;
             justify-content: flex-end;
-            text-align: right;
+            text-align: left;
             margin-left: auto;
         }
         .tip-chat-message-avatar {
