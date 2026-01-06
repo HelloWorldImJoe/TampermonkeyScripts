@@ -18,6 +18,101 @@
 (function() {
     'use strict';
 
+    // Solana RPC 端点
+    const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
+    // Solana Web3.js CDN 链接
+    const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
+    // Solana SPL Token CDN 链接
+    const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
+    // V2EX 代币铸币地址
+    const V2EX_MINT = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
+    // 消息成本
+    const MESSAGE_COST = 1;
+
+    // 用户地址缓存
+    const addressCache = new Map();
+    // Planet 所有者缓存
+    const planetOwnerCache = new Map();
+    // 默认回复消息
+    const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
+    // 快速感谢自动提交标志
+    const QUICK_THANK_AUTO_SUBMIT = false;
+    // 快速感谢模板函数
+    const QUICK_THANK_TEMPLATE = (names) => `感谢 ${names.join(' ')} 的打赏！🎉\n`;
+    // 快速感谢存储键
+    const QUICK_THANK_STORAGE_KEY = 'quick-thank-thanked-users-v1';
+    // DM 模态元素
+    let dmModalEl = null;
+    // 快速感谢是否已初始化
+    let quickThankInitialized = false;
+
+    // 聊天记录存储键
+    const TIP_CHAT_STORAGE_KEY = 'v2ex-tip-chat-records-v1';
+    // 聊天元数据存储键
+    const TIP_CHAT_META_KEY = 'v2ex-tip-chat-meta-v1';
+    // 当前登录用户缓存键
+    const TIP_CHAT_SELF_KEY = 'v2ex-tip-chat-self';
+    // 聊天记录最大限制
+    const TIP_CHAT_RECORD_LIMIT = 600;
+    // 脚本远程地址
+    const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/v2ex-scene-script.user.js';
+    // 脚本检查缓存键
+    const SCRIPT_UPDATE_CHECK_KEY = 'v2ex-tip-chat-update-check';
+    // 更新检查间隔（6 小时）
+    const SCRIPT_UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
+    // 每页记录数量预估（用于计算最大分页请求）
+    const TIP_CHAT_PAGE_ESTIMATE = 20;
+    // 引导阶段最多抓取的页面数量
+    const TIP_CHAT_MAX_BOOTSTRAP_PAGES = Math.ceil(TIP_CHAT_RECORD_LIMIT / TIP_CHAT_PAGE_ESTIMATE) + 2;
+    // 增量页面数量
+    const TIP_CHAT_INCREMENTAL_PAGES = 2;
+    // 刷新间隔（毫秒）
+    const TIP_CHAT_REFRESH_INTERVAL = 120000;
+    // 初始加载数量
+    const TIP_CHAT_INITIAL_LOAD = 30;
+    // 加载步长
+    const TIP_CHAT_LOAD_STEP = 20;
+    // 手动刷新修复页数上限
+    const TIP_CHAT_REPAIR_PAGES = 6;
+    // 聊天是否已初始化标志
+    // 聊天是否已初始化标志
+    let tipChatInitialized = false;
+    // 升级检测是否已安排
+    let scriptUpdateCheckScheduled = false;
+    // 聊天状态对象
+    const tipChatState = {
+        // 聊天记录数组
+        records: [],
+        // 对话映射
+        conversationMap: new Map(),
+        // 摘要数组
+        summaries: [],
+        // 活跃对等方
+        activePeer: null,
+        // 可见计数映射
+        visibleCountMap: new Map(),
+        // 元素对象
+        elements: {},
+        // 当前登录用户
+        currentUser: null,
+        // 刷新状态
+        refreshing: null,
+        // 刷新定时器
+        refreshTimer: null,
+        // 用户是否向上滚动
+        userScrolledUp: false,
+        // 面板是否固定
+        pinned: false,
+        // 是否正在发送新消息
+        composerSending: false,
+        // 已提示的升级版本
+        upgradePromptedVersion: null
+    };
+    // 成员头像缓存
+    const memberAvatarCache = new Map();
+    // 成员头像请求缓存
+    const memberAvatarRequestCache = new Map();
+
     const isMemberPage = window.location.pathname.startsWith('/member/');
 
     const baseStyles = `
@@ -729,6 +824,34 @@
             color: var(--tip-chat-muted);
             margin-top: 2px;
         }
+        .tip-chat-thread-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tip-chat-thread-tip-btn {
+            height: 30px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            background: rgba(99, 102, 241, 0.14);
+            color: var(--tip-chat-text);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+        }
+        .tip-chat-thread-tip-btn:hover:not(:disabled) {
+            background: rgba(99, 102, 241, 0.22);
+            border-color: rgba(99, 102, 241, 0.7);
+            color: #fff;
+        }
+        .tip-chat-thread-tip-btn:disabled,
+        .tip-chat-thread-tip-btn.loading {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
         .tip-chat-pin-btn {
             min-width: 54px;
             height: 30px;
@@ -784,7 +907,8 @@
         }
         .tip-chat-composer textarea {
             width: 100%;
-            min-height: 22px;
+            min-height: 20px;
+            height: 20px;
             border-radius: 14px;
             border: 1px solid var(--tip-chat-border);
             background: rgba(15, 23, 42, 0.4);
@@ -803,11 +927,6 @@
         .tip-chat-composer textarea:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-        }
-        .tip-chat-composer-status {
-            font-size: 12px;
-            color: var(--tip-chat-muted);
-            min-height: 16px;
         }
         .tip-chat-send-btn {
             border: none;
@@ -952,101 +1071,6 @@
         ${isMemberPage ? '' : tipStyles}
         ${dmAndChatStyles}
     `);
-
-    // Solana RPC 端点
-    const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
-    // Solana Web3.js CDN 链接
-    const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
-    // Solana SPL Token CDN 链接
-    const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
-    // V2EX 代币铸币地址
-    const V2EX_MINT = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
-    // 消息成本
-    const MESSAGE_COST = 1;
-
-    // 用户地址缓存
-    const addressCache = new Map();
-    // Planet 所有者缓存
-    const planetOwnerCache = new Map();
-    // 默认回复消息
-    const DEFAULT_REPLY_MESSAGE = '感谢您的精彩回答';
-    // 快速感谢自动提交标志
-    const QUICK_THANK_AUTO_SUBMIT = false;
-    // 快速感谢模板函数
-    const QUICK_THANK_TEMPLATE = (names) => `感谢 ${names.join(' ')} 的打赏！🎉\n`;
-    // 快速感谢存储键
-    const QUICK_THANK_STORAGE_KEY = 'quick-thank-thanked-users-v1';
-    // DM 模态元素
-    let dmModalEl = null;
-    // 快速感谢是否已初始化
-    let quickThankInitialized = false;
-
-    // 聊天记录存储键
-    const TIP_CHAT_STORAGE_KEY = 'v2ex-tip-chat-records-v1';
-    // 聊天元数据存储键
-    const TIP_CHAT_META_KEY = 'v2ex-tip-chat-meta-v1';
-    // 当前登录用户缓存键
-    const TIP_CHAT_SELF_KEY = 'v2ex-tip-chat-self';
-    // 聊天记录最大限制
-    const TIP_CHAT_RECORD_LIMIT = 600;
-    // 脚本远程地址
-    const SCRIPT_UPDATE_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/v2ex-scene-script.user.js';
-    // 脚本检查缓存键
-    const SCRIPT_UPDATE_CHECK_KEY = 'v2ex-tip-chat-update-check';
-    // 更新检查间隔（6 小时）
-    const SCRIPT_UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
-    // 每页记录数量预估（用于计算最大分页请求）
-    const TIP_CHAT_PAGE_ESTIMATE = 20;
-    // 引导阶段最多抓取的页面数量
-    const TIP_CHAT_MAX_BOOTSTRAP_PAGES = Math.ceil(TIP_CHAT_RECORD_LIMIT / TIP_CHAT_PAGE_ESTIMATE) + 2;
-    // 增量页面数量
-    const TIP_CHAT_INCREMENTAL_PAGES = 2;
-    // 刷新间隔（毫秒）
-    const TIP_CHAT_REFRESH_INTERVAL = 120000;
-    // 初始加载数量
-    const TIP_CHAT_INITIAL_LOAD = 30;
-    // 加载步长
-    const TIP_CHAT_LOAD_STEP = 20;
-    // 手动刷新修复页数上限
-    const TIP_CHAT_REPAIR_PAGES = 6;
-    // 聊天是否已初始化标志
-    // 聊天是否已初始化标志
-    let tipChatInitialized = false;
-    // 升级检测是否已安排
-    let scriptUpdateCheckScheduled = false;
-    // 聊天状态对象
-    const tipChatState = {
-        // 聊天记录数组
-        records: [],
-        // 对话映射
-        conversationMap: new Map(),
-        // 摘要数组
-        summaries: [],
-        // 活跃对等方
-        activePeer: null,
-        // 可见计数映射
-        visibleCountMap: new Map(),
-        // 元素对象
-        elements: {},
-        // 当前登录用户
-        currentUser: null,
-        // 刷新状态
-        refreshing: null,
-        // 刷新定时器
-        refreshTimer: null,
-        // 用户是否向上滚动
-        userScrolledUp: false,
-        // 面板是否固定
-        pinned: false,
-        // 是否正在发送新消息
-        composerSending: false,
-        // 已提示的升级版本
-        upgradePromptedVersion: null
-    };
-    // 成员头像缓存
-    const memberAvatarCache = new Map();
-    // 成员头像请求缓存
-    const memberAvatarRequestCache = new Map();
 
     // 使用 GM_xmlhttpRequest 包装 fetch，绕过浏览器 CORS 限制
     function gmFetch(url, options = {}) {
@@ -1293,7 +1317,7 @@
         messageEl.textContent = '';
 
         // 重置附言输入框与可见性（Planet 场景不提供附言）
-        const isPlanetContext = isPlanetPage() || options.tipType === 'planet-post' || options.tipType === 'planet-comment';
+        const isPlanetContext = isPlanetPage() || options.tipType === 'planet-post' || options.tipType === 'planet-comment' || options.tipType === 'tip-chat';
         const postscriptContainer = document.querySelector('.tip-postscript-container');
         const postscriptEl = document.getElementById('tip-postscript');
         if (postscriptContainer) {
@@ -1362,6 +1386,10 @@
             const safeTitle = sanitizeReplyText(planetTitle || getTopicTitle()) || 'Planet 主题';
             const linkPart = planetLink ? `, ${planetLink}` : '';
             return `打赏了你的Planet主题:[${safeTitle}]${linkPart}`;
+        }
+
+        if (tipType === 'tip-chat') {
+            return "";
         }
 
         const topicTitle = getTopicTitle();
@@ -2803,6 +2831,9 @@
                             <div class="tip-chat-thread-title" id="tip-chat-thread-title">选择会话</div>
                             <div class="tip-chat-thread-meta" id="tip-chat-thread-meta">最近 30 条消息</div>
                         </div>
+                        <div class="tip-chat-thread-actions">
+                            <button class="tip-chat-thread-tip-btn" id="tip-chat-tip-btn" type="button" title="打赏当前会话">赏</button>
+                        </div>
                     </div>
                     <div class="tip-chat-thread-list" id="tip-chat-thread-list">
                         <div class="tip-chat-empty">正在加载...</div>
@@ -2812,7 +2843,6 @@
                             <textarea id="tip-chat-composer-input" maxlength="500"></textarea>
                             <button class="tip-chat-send-btn" id="tip-chat-send-btn" type="button">发送</button>
                         </div>
-                        <div class="tip-chat-composer-status" id="tip-chat-composer-status"></div>
                     </div>
                 </section>
             </div>
@@ -2827,8 +2857,8 @@
             threadList: panel.querySelector('#tip-chat-thread-list'),
             threadTitle: panel.querySelector('#tip-chat-thread-title'),
             threadMeta: panel.querySelector('#tip-chat-thread-meta'),
+            threadTipBtn: panel.querySelector('#tip-chat-tip-btn'),
             composerInput: panel.querySelector('#tip-chat-composer-input'),
-            composerStatus: panel.querySelector('#tip-chat-composer-status'),
             composerSendBtn: panel.querySelector('#tip-chat-send-btn'),
             pinBtn: panel.querySelector('.tip-chat-pin-btn'),
             refreshBtn: panel.querySelector('.tip-chat-refresh'),
@@ -2865,6 +2895,10 @@
                     handleTipChatComposerSend();
                 }
             });
+        }
+        if (tipChatState.elements.threadTipBtn) {
+            tipChatState.elements.threadTipBtn.hidden = true;
+            tipChatState.elements.threadTipBtn.addEventListener('click', handleTipChatThreadTip);
         }
         tipChatState.elements.threadList.addEventListener('scroll', handleTipChatScroll);
         updateTipChatPinUI();
@@ -3102,10 +3136,19 @@
         const container = tipChatState.elements.threadList;
         const titleEl = tipChatState.elements.threadTitle;
         const metaEl = tipChatState.elements.threadMeta;
+        const tipBtn = tipChatState.elements.threadTipBtn;
         updateTipComposerState();
         if (!container) return;
         const peer = tipChatState.activePeer;
-        if (!peer || !tipChatState.conversationMap.has(peer)) {
+        const hasPeerThread = Boolean(peer && tipChatState.conversationMap.has(peer));
+        if (tipBtn) {
+            tipBtn.classList.remove('loading');
+            tipBtn.textContent = '赏';
+            tipBtn.disabled = !hasPeerThread;
+            tipBtn.hidden = !hasPeerThread;
+            tipBtn.title = hasPeerThread ? `打赏 @${peer}` : '选择会话后可打赏';
+        }
+        if (!hasPeerThread) {
             const prevPeer = peer;
             ensureActiveTipPeer();
             if (tipChatState.activePeer && tipChatState.activePeer !== prevPeer && tipChatState.conversationMap.has(tipChatState.activePeer)) {
@@ -3197,10 +3240,34 @@
         }
     }
 
+    async function handleTipChatThreadTip() {
+        const btn = tipChatState.elements.threadTipBtn;
+        const peer = tipChatState.activePeer;
+        if (!btn || !peer || !tipChatState.conversationMap.has(peer)) return;
+        const previousLabel = btn.textContent;
+        btn.classList.add('loading');
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+            const address = await getUserAddress(peer);
+            if (!address) {
+                alert(`用户 ${peer} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                return;
+            }
+            await showTipModal(peer, address, null, '来自聊天面板的打赏', null, { tipType: 'tip-chat' });
+        } catch (err) {
+            console.error('打开打赏弹窗失败', err);
+            alert(err.message || '获取用户信息失败，请稍后重试');
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            btn.textContent = previousLabel || '赏';
+        }
+    }
+
     function updateTipComposerState({ message, preserveStatus = true } = {}) {
         const input = tipChatState.elements.composerInput;
         const sendBtn = tipChatState.elements.composerSendBtn;
-        const statusEl = tipChatState.elements.composerStatus;
         const hasPeer = Boolean(tipChatState.activePeer);
         if (input) {
             input.disabled = !hasPeer || tipChatState.composerSending;
@@ -3213,13 +3280,6 @@
             } else {
                 sendBtn.disabled = !hasPeer;
                 sendBtn.textContent = '发送';
-            }
-        }
-        if (statusEl) {
-            if (typeof message === 'string') {
-                statusEl.textContent = message;
-            } else if (!preserveStatus || !statusEl.textContent) {
-                statusEl.textContent = hasPeer ? '发送将自动附带 1 $V2EX' : '';
             }
         }
     }
