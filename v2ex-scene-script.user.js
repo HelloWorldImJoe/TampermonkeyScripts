@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.1.3
+// @version      1.2.0
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -68,6 +68,10 @@
     const TIP_CHAT_INCREMENTAL_PAGES = 2;
     // 刷新间隔（毫秒）
     const TIP_CHAT_REFRESH_INTERVAL = 120000;
+    // 长按触发时间（毫秒）
+    const TIP_CHAT_LONG_PRESS_DELAY = 520;
+    // 长按移动容差（像素）
+    const TIP_CHAT_LONG_PRESS_MOVE_THRESHOLD = 6;
     // 初始加载数量
     const TIP_CHAT_INITIAL_LOAD = 30;
     // 加载步长
@@ -106,7 +110,11 @@
         // 是否正在发送新消息
         composerSending: false,
         // 已提示的升级版本
-        upgradePromptedVersion: null
+        upgradePromptedVersion: null,
+        // 消息操作菜单
+        messageActionsMenu: null,
+        // 引用的消息
+        quotedMessage: null
     };
     // 成员头像缓存
     const memberAvatarCache = new Map();
@@ -1025,6 +1033,17 @@
             align-self: flex-start;
             max-width: 100%;
         }
+        .tip-chat-message-bubble .tip-chat-message-img {
+            max-width: min(360px, 82vw);
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            display: block;
+            margin-top: 6px;
+        }
+        .tip-chat-message-bubble .tip-chat-image-link {
+            text-decoration: none;
+        }
         .tip-chat-message-bubble a {
             color: #7cb7ff;
             text-decoration: none;
@@ -1037,6 +1056,11 @@
         .tip-chat-message.outgoing .tip-chat-message-bubble {
             background: var(--tip-chat-bubble-self);
             align-self: flex-end;
+        }
+        .tip-chat-message.tip-chat-highlight {
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
+            border-radius: 14px;
+            transition: box-shadow 0.2s ease;
         }
         .tip-chat-thread-list::-webkit-scrollbar,
         .tip-chat-conversation-list::-webkit-scrollbar {
@@ -1063,6 +1087,71 @@
         .tip-chat-cta-btn[disabled] {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+        .tip-chat-message-actions {
+            position: fixed;
+            background: rgba(17, 24, 39, 0.98);
+            border: 1px solid var(--tip-chat-border);
+            border-radius: 10px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5);
+            z-index: 10001;
+            overflow: hidden;
+            min-width: 140px;
+        }
+        .tip-chat-message-action-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border: none;
+            background: transparent;
+            color: var(--tip-chat-text);
+            font-size: 13px;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+            transition: background 0.2s ease;
+        }
+        .tip-chat-message-action-item:hover {
+            background: rgba(99, 102, 241, 0.15);
+        }
+        .tip-chat-message-action-item:not(:last-child) {
+            border-bottom: 1px solid var(--tip-chat-border);
+        }
+        .tip-chat-message-action-icon {
+            font-size: 14px;
+        }
+        .tip-chat-message-bubble {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+        .tip-chat-message-quote {
+            background: rgba(99, 102, 241, 0.15);
+            border-left: 3px solid var(--tip-chat-accent);
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--tip-chat-muted);
+            line-height: 1.4;
+            max-height: 80px;
+            overflow: hidden;
+            position: relative;
+        }
+        .tip-chat-message-quote::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(transparent, rgba(99, 102, 241, 0.15));
+        }
+        .tip-chat-message-divider {
+            margin: 8px 0;
+            border: none;
+            border-top: 1px dashed var(--tip-chat-border);
         }
     `;
 
@@ -1320,11 +1409,12 @@
         const isPlanetContext = isPlanetPage() || options.tipType === 'planet-post' || options.tipType === 'planet-comment' || options.tipType === 'tip-chat';
         const postscriptContainer = document.querySelector('.tip-postscript-container');
         const postscriptEl = document.getElementById('tip-postscript');
+        const defaultPostscript = options.defaultPostscript || '';
         if (postscriptContainer) {
             postscriptContainer.style.display = isPlanetContext ? 'none' : '';
         }
         if (postscriptEl) {
-            postscriptEl.value = '';
+            postscriptEl.value = defaultPostscript;
         }
 
         // 重置token选择
@@ -1389,7 +1479,8 @@
         }
 
         if (tipType === 'tip-chat') {
-            return "";
+            const chatMemo = (options && options.defaultPostscript) || (options && options.tipChatMemo) || '';
+            return chatMemo || '打赏了你的私聊';
         }
 
         const topicTitle = getTopicTitle();
@@ -1420,6 +1511,13 @@
             postscript || DEFAULT_REPLY_MESSAGE
         ].filter(Boolean);
         return parts.join(' ');
+    }
+
+    function buildTipChatPostscript(messageText) {
+        const normalized = (messageText || '').replace(/\s+/g, ' ').trim();
+        const content = normalized || '（空消息）';
+        const truncated = content.length > 120 ? `${content.slice(0, 117)}...` : content;
+        return `打赏了你的私聊 > ${truncated}`;
     }
 
     // 处理打赏确认
@@ -1481,21 +1579,23 @@
                 resolve();
             }, 2000));
 
+            const defaultPostscript = options.defaultPostscript || '';
             const replyContent = buildReplyContent({ replyText, replyId, options });
+            const postscriptEl = document.getElementById('tip-postscript');
+            const userPostscript = postscriptEl ? postscriptEl.value.trim() : '';
+            const postscript = userPostscript || defaultPostscript;
+            const memoContent = replyContent || postscript || '';
 
             await submitTipRecord({
                 signature,
                 amount,
-                memo: replyContent,
+                memo: memoContent,
                 token: selectedToken
             });
 
             showMessage('打赏成功！', 'success');
 
             // 检查是否有附言需要发送
-            const postscriptEl = document.getElementById('tip-postscript');
-            const postscript = postscriptEl ? postscriptEl.value.trim() : '';
-            
             if (postscript && replyId) {
                 try {
                     showMessage('正在发送附言...', 'info');
@@ -2632,17 +2732,67 @@
         return '';
     }
 
+    function normalizeQuoteId(rawId) {
+        const val = String(rawId || '').trim();
+        return val ? val.slice(0, 6) : '';
+    }
+
+    function parseQuotedMessage(rawText = '') {
+        if (!rawText) return { quoteId: null, quoteText: '', mainText: '' };
+        const parts = rawText.split('------');
+        if (parts.length < 2) {
+            return { quoteId: null, quoteText: '', mainText: rawText.trim() };
+        }
+        const rawQuote = parts[0].trim();
+        const match = rawQuote.match(/^\[quote:([^\]]+)\]\s*(.*)$/s);
+        const rawQuoteId = match ? (match[1] || '').trim() : null;
+        const quoteId = normalizeQuoteId(rawQuoteId);
+        const quoteText = match ? (match[2] || '').trim() : rawQuote;
+        const mainText = parts.slice(1).join('------').trim();
+        return { quoteId, quoteText, mainText };
+    }
+
+    function escapeCssSelector(val) {
+        if (!val) return '';
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+            return window.CSS.escape(val);
+        }
+        return String(val).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+    }
+
     function getRecordMessageHtml(record) {
         if (!record) return '';
         const memoText = getRecordMemoText(record);
         const memoHtml = typeof record.memoHtml === 'string' ? record.memoHtml.trim() : '';
-        if (memoHtml) {
-            if (/<a\s/i.test(memoHtml)) return memoHtml;
-            if (memoText) return linkifyText(memoText);
-            return memoHtml;
+
+        if (memoText) {
+            const { quoteId, quoteText, mainText } = parseQuotedMessage(memoText);
+            if (quoteId || quoteText) {
+                const quoteHtml = quoteText ? linkifyText(quoteText) : '';
+                const mainHtml = mainText ? linkifyText(mainText) : '';
+                const dataAttr = quoteId ? ` data-quote-target="${escapeHtmlAttribute(quoteId)}"` : '';
+                return `<div class="tip-chat-message-quote"${dataAttr}>${quoteHtml}</div>${mainHtml}`;
+            }
+            if (memoHtml) {
+                if (/<a\s/i.test(memoHtml)) return memoHtml;
+                if (memoText) return linkifyText(memoText);
+                return memoHtml;
+            }
+            return linkifyText(memoText);
         }
-        if (memoText) return linkifyText(memoText);
         return escapeHtmlText(formatMessageBody(record) || '');
+    }
+
+    function isImgurImageUrl(url) {
+        if (!url) return false;
+        try {
+            const u = new URL(url, window.location.origin);
+            const isSupportedHost = u.hostname === 'i.imgur.com' || u.hostname === 'i.v2ex.co';
+            if (!isSupportedHost) return false;
+            return /\.(png|jpe?g|gif|webp)$/i.test(u.pathname);
+        } catch (_err) {
+            return false;
+        }
     }
 
     function linkifyText(text = '') {
@@ -2658,7 +2808,11 @@
                 href = `${window.location.origin}${path}`;
             }
             const safeHref = escapeHtmlAttribute(href);
-            html += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(match)}</a>`;
+            if (isImgurImageUrl(href)) {
+                html += `<a class="tip-chat-image-link" href="${safeHref}" target="_blank" rel="noopener noreferrer"><img class="tip-chat-message-img" src="${safeHref}" alt="image" loading="lazy"></a>`;
+            } else {
+                html += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(match)}</a>`;
+            }
             lastIndex = offset + match.length;
             return match;
         });
@@ -2906,10 +3060,12 @@
             if (!isTipChatPanelOpen()) return;
             const panelEl = tipChatState.elements.panel;
             const launcherEl = tipChatState.elements.launcher;
+            const actionsMenuEl = tipChatState.messageActionsMenu;
             const path = typeof event.composedPath === 'function' ? event.composedPath() : null;
             const isInsidePanel = panelEl ? path ? path.includes(panelEl) : panelEl.contains(event.target) : false;
             const isLauncher = launcherEl ? path ? path.includes(launcherEl) : launcherEl.contains(event.target) : false;
-            if (!isInsidePanel && !isLauncher) {
+            const isInsideActionsMenu = actionsMenuEl ? path ? path.includes(actionsMenuEl) : actionsMenuEl.contains(event.target) : false;
+            if (!isInsidePanel && !isLauncher && !isInsideActionsMenu) {
                 if (tipChatState.pinned) return;
                 toggleTipChatPanel(false);
             }
@@ -3194,6 +3350,12 @@
             const row = document.createElement('div');
             const outgoing = record.from === me;
             row.className = `tip-chat-message ${outgoing ? 'outgoing' : 'incoming'}`;
+            if (record.id) {
+                const quoteId = normalizeQuoteId(record.id) || record.id;
+                row.id = `tip-chat-msg-${quoteId}`;
+                row.dataset.recordId = record.id;
+                row.dataset.quoteId = quoteId;
+            }
 
             const avatarOwner = outgoing ? me : (record.from || peer);
             const avatarUrl = record.fromAvatar || resolveAvatarForUser(avatarOwner, tipChatState.records);
@@ -3223,6 +3385,20 @@
             bubble.className = 'tip-chat-message-bubble';
             bubble.innerHTML = getRecordMessageHtml(record);
 
+            // 长按显示操作菜单，保留普通点击用于打开链接
+            bindMessageBubbleActions(bubble, record, peer);
+
+            // 引用块点击跳转
+            bubble.querySelectorAll('.tip-chat-message-quote').forEach((quoteEl) => {
+                const targetId = quoteEl.getAttribute('data-quote-target');
+                if (!targetId) return;
+                quoteEl.style.cursor = 'pointer';
+                quoteEl.addEventListener('click', (evt) => {
+                    evt.stopPropagation();
+                    jumpToQuotedMessage(targetId);
+                });
+            });
+
             contentWrap.appendChild(meta);
             contentWrap.appendChild(bubble);
             row.appendChild(avatarWrap);
@@ -3240,6 +3416,15 @@
         }
     }
 
+    function getLatestTipChatMessageText(peer) {
+        const list = tipChatState.conversationMap.get(peer) || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+            const text = getRecordMemoText(list[i]) || formatMessageBody(list[i]) || '';
+            if (text) return text;
+        }
+        return '';
+    }
+
     async function handleTipChatThreadTip() {
         const btn = tipChatState.elements.threadTipBtn;
         const peer = tipChatState.activePeer;
@@ -3254,7 +3439,13 @@
                 alert(`用户 ${peer} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
                 return;
             }
-            await showTipModal(peer, address, null, '来自聊天面板的打赏', null, { tipType: 'tip-chat' });
+            const latestMessage = getLatestTipChatMessageText(peer);
+            const postscript = buildTipChatPostscript(latestMessage);
+            await showTipModal(peer, address, null, '来自聊天面板的打赏', null, {
+                tipType: 'tip-chat',
+                defaultPostscript: postscript,
+                tipChatMemo: latestMessage
+            });
         } catch (err) {
             console.error('打开打赏弹窗失败', err);
             alert(err.message || '获取用户信息失败，请稍后重试');
@@ -3263,6 +3454,228 @@
             btn.disabled = false;
             btn.textContent = previousLabel || '赏';
         }
+    }
+
+    function jumpToQuotedMessage(targetId) {
+        if (!targetId) return;
+        const container = tipChatState.elements.threadList;
+        if (!container) return;
+        const shortId = normalizeQuoteId(targetId);
+        let targetEl = container.querySelector(`#tip-chat-msg-${escapeCssSelector(targetId)}`);
+        if (!targetEl && shortId && shortId !== targetId) {
+            targetEl = container.querySelector(`#tip-chat-msg-${escapeCssSelector(shortId)}`);
+        }
+        if (!targetEl) return;
+        const desiredOffset = targetEl.offsetTop - 72;
+        container.scrollTop = desiredOffset < 0 ? 0 : desiredOffset;
+        targetEl.classList.add('tip-chat-highlight');
+        setTimeout(() => {
+            targetEl.classList.remove('tip-chat-highlight');
+        }, 1500);
+    }
+
+    // 创建消息操作菜单
+    function createMessageActionsMenu() {
+        if (tipChatState.messageActionsMenu) {
+            return tipChatState.messageActionsMenu;
+        }
+        
+        const menu = document.createElement('div');
+        menu.className = 'tip-chat-message-actions';
+        menu.style.display = 'none';
+        
+        const tipAction = document.createElement('button');
+        tipAction.className = 'tip-chat-message-action-item';
+        tipAction.innerHTML = '<span>赞赏</span>';
+        
+        const quoteAction = document.createElement('button');
+        quoteAction.className = 'tip-chat-message-action-item';
+        quoteAction.innerHTML = '<span>引用</span>';
+        
+        menu.appendChild(tipAction);
+        menu.appendChild(quoteAction);
+        document.body.appendChild(menu);
+        
+        // 点击外部关闭菜单
+        document.addEventListener('click', (e) => {
+            if (!menu.contains(e.target) && !e.target.closest('.tip-chat-message-bubble')) {
+                menu.style.display = 'none';
+            }
+        });
+        
+        tipChatState.messageActionsMenu = menu;
+        return menu;
+    }
+
+    // 显示消息操作菜单
+    function showMessageActionsMenu(e, record, peerUsername) {
+        if (e && typeof e.stopPropagation === 'function') {
+            e.stopPropagation();
+        }
+        if (e && typeof e.preventDefault === 'function') {
+            e.preventDefault();
+        }
+        
+        const menu = createMessageActionsMenu();
+        const anchorEl = (e && (e.target || e.currentTarget)) || null;
+        const rect = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null;
+        const fallbackLeft = (e && typeof e.clientX === 'number') ? e.clientX : 0;
+        const fallbackTop = (e && typeof e.clientY === 'number') ? e.clientY : 0;
+        
+        // 定位菜单
+        menu.style.left = `${rect ? rect.left : fallbackLeft}px`;
+        menu.style.top = `${rect ? rect.bottom + 5 : fallbackTop + 5}px`;
+        menu.style.display = 'block';
+        
+        // 检查是否超出屏幕
+        setTimeout(() => {
+            const menuRect = menu.getBoundingClientRect();
+            const anchorRect = rect || {
+                left: fallbackLeft,
+                right: fallbackLeft,
+                top: fallbackTop,
+                bottom: fallbackTop
+            };
+            if (menuRect.right > window.innerWidth) {
+                menu.style.left = `${anchorRect.right - menuRect.width}px`;
+            }
+            if (menuRect.bottom > window.innerHeight) {
+                menu.style.top = `${anchorRect.top - menuRect.height - 5}px`;
+            }
+        }, 0);
+        
+        // 绑定事件
+        const tipBtn = menu.querySelector('.tip-chat-message-action-item:nth-child(1)');
+        const quoteBtn = menu.querySelector('.tip-chat-message-action-item:nth-child(2)');
+        
+        // 移除旧的事件监听器
+        const newTipBtn = tipBtn.cloneNode(true);
+        const newQuoteBtn = quoteBtn.cloneNode(true);
+        tipBtn.parentNode.replaceChild(newTipBtn, tipBtn);
+        quoteBtn.parentNode.replaceChild(newQuoteBtn, quoteBtn);
+        
+        // 赞赏功能
+        newTipBtn.onclick = async () => {
+            const isOutgoing = record.from === tipChatState.currentUser;
+            const targetUser = isOutgoing ? record.to : record.from;
+            
+            try {
+                const address = await getUserAddress(targetUser);
+                if (!address) {
+                    alert(`用户 ${targetUser} 还未绑定 Solana 地址，无法接收打赏。\n\n请提醒 TA 在 V2EX 设置中绑定 Solana 地址。`);
+                    return;
+                }
+                
+                const messageText = getRecordMemoText(record) || formatMessageBody(record) || '';
+                const postscript = buildTipChatPostscript(messageText);
+                await showTipModal(targetUser, address, null, null, null, {
+                    tipType: 'tip-chat',
+                    defaultPostscript: postscript,
+                    tipChatMemo: messageText
+                });
+            } catch (err) {
+                console.error('打赏失败:', err);
+                alert('打赏失败: ' + (err.message || '未知错误'));
+            }
+        };
+        
+        // 引用功能
+        newQuoteBtn.onclick = () => {
+            const composer = tipChatState.elements.composerInput;
+            if (!composer) return;
+            
+            const messageText = getRecordMemoText(record) || formatMessageBody(record) || '';
+            const quoteId = normalizeQuoteId(record.id) || '';
+            tipChatState.quotedMessage = {
+                text: messageText,
+                from: record.from,
+                timestamp: record.created,
+                id: quoteId
+            };
+            
+            const prefix = quoteId ? `[quote:${quoteId}]` : '';
+            const currentText = composer.value.trim();
+            const mainPart = currentText ? `\n${currentText}\n` : '';
+            const composed = `${prefix}${messageText}\n------\n${mainPart}`;
+            composer.value = composed;
+
+            // 提升输入框高度以容纳引用
+            const desiredHeight = 96;
+            const currentHeight = parseInt(window.getComputedStyle(composer).height, 10) || 0;
+            if (currentHeight < desiredHeight) {
+                composer.style.minHeight = `${desiredHeight}px`;
+                composer.style.height = `${desiredHeight}px`;
+            }
+
+            composer.focus();
+            // 将光标移到最后一行，便于继续输入
+            const caretPos = composer.value.length;
+            composer.setSelectionRange(caretPos, caretPos);
+        };
+    }
+
+    function bindMessageBubbleActions(bubble, record, peerUsername) {
+        if (!bubble) return;
+        let pressTimer = null;
+        let pressTriggered = false;
+        let startX = 0;
+        let startY = 0;
+
+        const clearPressTimer = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        };
+
+        const cancelPress = (evt) => {
+            const wasTriggered = pressTriggered;
+            clearPressTimer();
+            pressTriggered = false;
+            if (wasTriggered && evt) {
+                evt.preventDefault();
+                evt.stopPropagation();
+            }
+        };
+
+        bubble.addEventListener('pointerdown', (evt) => {
+            if (evt.pointerType === 'mouse' && evt.button !== 0) return;
+            startX = evt.clientX;
+            startY = evt.clientY;
+            pressTriggered = false;
+            clearPressTimer();
+            pressTimer = setTimeout(() => {
+                pressTimer = null;
+                pressTriggered = true;
+                const syntheticEvent = {
+                    target: evt.target || bubble,
+                    currentTarget: bubble,
+                    clientX: evt.clientX,
+                    clientY: evt.clientY,
+                    preventDefault: () => {},
+                    stopPropagation: () => {}
+                };
+                showMessageActionsMenu(syntheticEvent, record, peerUsername);
+            }, TIP_CHAT_LONG_PRESS_DELAY);
+        });
+
+        bubble.addEventListener('pointermove', (evt) => {
+            if (!pressTimer) return;
+            if (Math.abs(evt.clientX - startX) > TIP_CHAT_LONG_PRESS_MOVE_THRESHOLD || Math.abs(evt.clientY - startY) > TIP_CHAT_LONG_PRESS_MOVE_THRESHOLD) {
+                clearPressTimer();
+                pressTriggered = false;
+            }
+        });
+
+        bubble.addEventListener('pointerup', cancelPress, true);
+        bubble.addEventListener('pointercancel', cancelPress);
+        bubble.addEventListener('pointerleave', () => {
+            if (pressTimer) {
+                clearPressTimer();
+                pressTriggered = false;
+            }
+        });
+        bubble.addEventListener('dragstart', clearPressTimer);
     }
 
     function updateTipComposerState({ message, preserveStatus = true } = {}) {
