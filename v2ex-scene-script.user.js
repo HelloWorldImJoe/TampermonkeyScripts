@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.0
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -10,6 +10,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      www.v2ex.com
 // @connect      jillian-fnk7b6-fast-mainnet.helius-rpc.com
 // @connect      raw.githubusercontent.com
@@ -18,12 +19,28 @@
 (function() {
     'use strict';
 
+    const PAGE_WINDOW = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
+
     // Solana RPC 端点
     const SOLANA_RPC = 'https://jillian-fnk7b6-fast-mainnet.helius-rpc.com';
     // Solana Web3.js CDN 链接
     const WEB3_CDN = 'https://unpkg.com/@solana/web3.js@1.95.0/lib/index.iife.js';
     // Solana SPL Token CDN 链接
     const SPL_TOKEN_CDN = 'https://unpkg.com/@solana/spl-token@0.4.5/lib/index.iife.js';
+    // Solana Wallet Adapter Base CDN 链接
+    const WALLET_ADAPTER_BASE_CDN = 'https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-base@0.9.24/+esm';
+    // BS58 模块 CDN 链接
+    const BS58_MODULE_CDN = 'https://cdn.jsdelivr.net/npm/bs58@5.0.0/+esm';
+    // Solana 链 ID
+    const SOLANA_CHAIN_ID = 'solana:mainnet-beta';
+    // 标准连接功能
+    const STANDARD_CONNECT_FEATURE = 'standard:connect';
+    // 标准事件功能
+    const STANDARD_EVENTS_FEATURE = 'standard:events';
+    // Solana 签名并发送交易功能
+    const SOLANA_SIGN_AND_SEND_FEATURE = 'solana:signAndSendTransaction';
+    // Solana 签名交易功能
+    const SOLANA_SIGN_TRANSACTION_FEATURE = 'solana:signTransaction';
     // V2EX 代币铸币地址
     const V2EX_MINT = '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
     // 消息成本
@@ -1227,6 +1244,442 @@
         await loadScriptOnce(SPL_TOKEN_CDN, () => typeof splToken !== 'undefined');
     }
 
+    let walletAdapterBaseModulePromise = null;
+    let bs58ModulePromise = null;
+
+    function ensureWalletAdapterBaseModule() {
+        if (!walletAdapterBaseModulePromise) {
+            walletAdapterBaseModulePromise = import(WALLET_ADAPTER_BASE_CDN);
+        }
+        return walletAdapterBaseModulePromise;
+    }
+
+    function getBs58Encoder() {
+        if (!bs58ModulePromise) {
+            bs58ModulePromise = import(BS58_MODULE_CDN);
+        }
+        return bs58ModulePromise.then((mod) => mod?.default || mod);
+    }
+
+    function getAccountChain(account) {
+        if (account?.chains && account.chains.length > 0) {
+            return account.chains[0];
+        }
+        return SOLANA_CHAIN_ID;
+    }
+
+    function buildStandardSignOptions(options = {}) {
+        const payload = {};
+        if (options.preflightCommitment) payload.preflightCommitment = options.preflightCommitment;
+        if (typeof options.minContextSlot === 'number') payload.minContextSlot = options.minContextSlot;
+        return Object.keys(payload).length ? payload : undefined;
+    }
+
+    function buildStandardSendOptions(options = {}) {
+        const payload = {};
+        if (options.preflightCommitment) payload.preflightCommitment = options.preflightCommitment;
+        if (typeof options.minContextSlot === 'number') payload.minContextSlot = options.minContextSlot;
+        if (options.commitment) payload.commitment = options.commitment;
+        if (typeof options.skipPreflight === 'boolean') payload.skipPreflight = options.skipPreflight;
+        if (typeof options.maxRetries === 'number') payload.maxRetries = options.maxRetries;
+        return Object.keys(payload).length ? payload : undefined;
+    }
+
+    const walletSession = {
+        module: null,
+        provider: null,
+        type: null,
+        account: null,
+        eventUnsubscribe: null,
+        sleep(ms = 100) {
+            return new Promise((resolve) => setTimeout(resolve, ms));
+        },
+        async ensureModule() {
+            if (!this.module) {
+                this.module = await ensureWalletAdapterBaseModule();
+            }
+            return this.module;
+        },
+        async detectProvider() {
+            if (this.provider) return this.provider;
+            const module = await this.ensureModule();
+            const { isWalletAdapterCompatibleStandardWallet, WalletNotReadyError } = module;
+            const candidates = [];
+
+            if (PAGE_WINDOW.navigator?.wallets?.get) {
+                try {
+                    const wallets = await PAGE_WINDOW.navigator.wallets.get();
+                    if (Array.isArray(wallets)) {
+                        candidates.push(...wallets.filter(Boolean));
+                    }
+                } catch (err) {
+                    console.warn('获取 Wallet Standard 钱包失败:', err);
+                }
+            }
+
+            const injectedCandidates = this.getInjectedCandidates();
+            candidates.push(...injectedCandidates);
+
+            const standardWallet = candidates.find((wallet) => {
+                try {
+                    return isWalletAdapterCompatibleStandardWallet(wallet);
+                } catch (err) {
+                    return false;
+                }
+            });
+
+            if (standardWallet) {
+                this.provider = standardWallet;
+                this.type = 'standard';
+                return standardWallet;
+            }
+
+            const legacy = this.selectLegacyProvider([...injectedCandidates]);
+            if (legacy) {
+                const normalizedLegacy = await this.normalizeLegacyProvider(legacy);
+                if (normalizedLegacy) {
+                    this.provider = normalizedLegacy;
+                    this.type = 'legacy';
+                    return normalizedLegacy;
+                }
+            }
+
+            throw new WalletNotReadyError('未检测到支持 Wallet Standard 的 Solana 钱包');
+        },
+        getInjectedCandidates() {
+            const results = [];
+            const solana = PAGE_WINDOW.solana;
+            if (solana?.providers?.length) {
+                results.push(...solana.providers.filter(Boolean));
+            }
+            if (solana) {
+                results.push(solana);
+            }
+            if (PAGE_WINDOW.phantom?.solana) {
+                results.push(PAGE_WINDOW.phantom.solana);
+            }
+            const knownKeys = ['backpack', 'solflare', 'exodus', 'clover', 'slope', 'okxwallet', 'bitgetwallet'];
+            knownKeys.forEach((key) => {
+                const candidate = PAGE_WINDOW[key];
+                if (!candidate) return;
+                if (candidate.solana) {
+                    results.push(candidate.solana);
+                    if (candidate.solana.provider) {
+                        results.push(candidate.solana.provider);
+                    }
+                }
+                if (candidate.providers?.solana) {
+                    results.push(candidate.providers.solana);
+                }
+                if (candidate.wallet) {
+                    results.push(candidate.wallet);
+                }
+                if (candidate.provider) {
+                    results.push(candidate.provider);
+                }
+                results.push(candidate);
+            });
+            const okx = PAGE_WINDOW.okxwallet;
+            if (okx) {
+                if (okx.solana) {
+                    results.push(okx.solana);
+                    if (okx.solana.provider) {
+                        results.push(okx.solana.provider);
+                    }
+                }
+                if (okx.providers?.solana) {
+                    results.push(okx.providers.solana);
+                }
+                if (typeof okx.getProvider === 'function') {
+                    try {
+                        const provider = okx.getProvider('solana');
+                        if (provider && typeof provider.then !== 'function') {
+                            results.push(provider);
+                        }
+                    } catch (err) {
+                        console.debug('OKX getProvider 调用失败:', err);
+                    }
+                }
+            }
+            return results.filter(Boolean);
+        },
+        isOkxLikeWallet(wallet) {
+            return Boolean(wallet && (
+                wallet.isOkxWallet ||
+                wallet.isOKXWallet ||
+                wallet.isOKX ||
+                wallet.okxwallet ||
+                wallet === PAGE_WINDOW.okxwallet ||
+                wallet === PAGE_WINDOW.okxwallet?.solana ||
+                wallet === PAGE_WINDOW.okxwallet?.solana?.provider
+            ));
+        },
+        isBitgetLikeWallet(wallet) {
+            return Boolean(wallet && (
+                wallet.isBitget ||
+                wallet.isBitKeep ||
+                wallet === PAGE_WINDOW.bitgetwallet ||
+                wallet === PAGE_WINDOW.bitgetwallet?.solana
+            ));
+        },
+        unwrapLegacyCandidate(wallet, options = {}) {
+            if (!wallet) return null;
+            const { requireConnector = false } = options;
+            const candidates = [
+                wallet.solana?.provider,
+                wallet.providers?.solana,
+                wallet.solanaProvider,
+                wallet.solana,
+                wallet.provider,
+                wallet
+            ];
+            for (const candidate of candidates) {
+                if (!candidate) continue;
+                if (!requireConnector) {
+                    return candidate;
+                }
+                if (typeof candidate.connect === 'function' || typeof candidate.request === 'function') {
+                    return candidate;
+                }
+            }
+            return requireConnector ? null : wallet;
+        },
+        selectLegacyProvider(candidates = []) {
+            return candidates.find((wallet) => {
+                if (!wallet) return false;
+                const target = this.unwrapLegacyCandidate(wallet, { requireConnector: true }) || this.unwrapLegacyCandidate(wallet);
+                if (!target) return false;
+                const hasConnector = typeof target.connect === 'function' || typeof target.request === 'function';
+                const hasSigner = typeof target.signAndSendTransaction === 'function' || typeof target.signTransaction === 'function' || typeof target.request === 'function';
+                if (hasConnector && hasSigner) {
+                    return true;
+                }
+                if (this.isOkxLikeWallet(wallet) || this.isBitgetLikeWallet(wallet)) {
+                    return true;
+                }
+                return false;
+            }) || null;
+        },
+        async normalizeLegacyProvider(wallet) {
+            if (!wallet) return null;
+            const isOkx = this.isOkxLikeWallet(wallet);
+            const isBitget = this.isBitgetLikeWallet(wallet);
+            const attemptLimit = isOkx ? 6 : (isBitget ? 3 : 1);
+            const tryResolve = async () => {
+                if (isOkx) {
+                    if (PAGE_WINDOW.okxwallet?.solana && (typeof PAGE_WINDOW.okxwallet.solana.connect === 'function' || typeof PAGE_WINDOW.okxwallet.solana.request === 'function')) {
+                        return PAGE_WINDOW.okxwallet.solana;
+                    }
+                    if (PAGE_WINDOW.okxwallet?.providers?.solana) {
+                        const solProvider = PAGE_WINDOW.okxwallet.providers.solana;
+                        if (typeof solProvider.connect === 'function' || typeof solProvider.request === 'function') {
+                            return solProvider;
+                        }
+                    }
+                    if (typeof PAGE_WINDOW.okxwallet?.getProvider === 'function') {
+                        try {
+                            const maybeProvider = PAGE_WINDOW.okxwallet.getProvider('solana');
+                            const resolved = typeof maybeProvider?.then === 'function' ? await maybeProvider : maybeProvider;
+                            if (resolved && (typeof resolved.connect === 'function' || typeof resolved.request === 'function')) {
+                                return resolved;
+                            }
+                        } catch (err) {
+                            console.debug('获取 OKX Solana provider 失败:', err);
+                        }
+                    }
+                }
+                if (isBitget) {
+                    const bitgetSol = PAGE_WINDOW.bitgetwallet?.solana;
+                    if (bitgetSol && (typeof bitgetSol.connect === 'function' || typeof bitgetSol.request === 'function')) {
+                        return bitgetSol;
+                    }
+                }
+                const direct = this.unwrapLegacyCandidate(wallet, { requireConnector: true });
+                if (direct) {
+                    return direct;
+                }
+                return null;
+            };
+            for (let attempt = 0; attempt < attemptLimit; attempt++) {
+                const resolved = await tryResolve();
+                if (resolved) {
+                    return resolved;
+                }
+                if (attempt < attemptLimit - 1) {
+                    await this.sleep(150);
+                }
+            }
+            return this.unwrapLegacyCandidate(wallet) || wallet;
+        },
+        async connect(options = {}) {
+            const provider = await this.detectProvider();
+            if (this.type === 'standard') {
+                await this.connectStandard(provider, options);
+            } else {
+                await this.connectLegacy(provider, options);
+            }
+        },
+        async connectStandard(provider, options = {}) {
+            const connectFeature = provider.features?.[STANDARD_CONNECT_FEATURE];
+            if (!connectFeature || typeof connectFeature.connect !== 'function') {
+                throw new Error('钱包不支持 Wallet Standard 连接能力');
+            }
+            const params = options.silent ? { silent: true } : undefined;
+            const result = await connectFeature.connect(params);
+            const accounts = result?.accounts || provider.accounts || [];
+            if (!accounts.length) {
+                throw new Error('钱包未返回任何账户');
+            }
+            this.account = accounts[0];
+            this.bindStandardEvents(provider);
+        },
+        bindStandardEvents(provider) {
+            if (this.eventUnsubscribe || !provider.features?.[STANDARD_EVENTS_FEATURE]) return;
+            try {
+                const { on } = provider.features[STANDARD_EVENTS_FEATURE];
+                if (typeof on === 'function') {
+                    this.eventUnsubscribe = on('change', ({ accounts }) => {
+                        if (Array.isArray(accounts) && accounts.length) {
+                            this.account = accounts[0];
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('注册钱包事件失败:', err);
+            }
+        },
+        async connectLegacy(provider, options = {}) {
+            const isConnected = provider.isConnected || provider.connected;
+            if (isConnected) return;
+            if (typeof provider.connect !== 'function') {
+                throw new Error('当前钱包不支持连接接口');
+            }
+            if (options.silent) {
+                try {
+                    await provider.connect({ onlyIfTrusted: true });
+                } catch (err) {
+                    console.debug('静默连接 Legacy 钱包失败:', err);
+                }
+                return;
+            }
+            await provider.connect();
+        },
+        isConnected() {
+            if (this.type === 'standard') {
+                return Boolean(this.account || this.provider?.accounts?.length);
+            }
+            return Boolean(this.provider?.isConnected || this.provider?.connected);
+        },
+        getAddress() {
+            if (this.type === 'standard') {
+                const account = this.account || this.provider?.accounts?.[0];
+                if (!account) return null;
+                if (account.publicKey) {
+                    try {
+                        return new solanaWeb3.PublicKey(account.publicKey).toBase58();
+                    } catch (err) {
+                        console.warn('解析钱包公钥失败:', err);
+                    }
+                }
+                if (account.address && isSolAddress(account.address)) {
+                    return account.address;
+                }
+                return null;
+            }
+            return this.provider?.publicKey?.toString() || null;
+        },
+        async signAndSend(transaction, options = {}) {
+            const provider = await this.detectProvider();
+            if (this.type === 'standard') {
+                if (!this.isConnected()) {
+                    await this.connect();
+                }
+                return this.signAndSendStandard(provider, transaction, options);
+            }
+            if (typeof provider.signAndSendTransaction !== 'function') {
+                throw new Error('当前钱包不支持 signAndSendTransaction');
+            }
+            const result = await provider.signAndSendTransaction(transaction);
+            if (typeof result === 'string') {
+                return result;
+            }
+            if (result?.signature) {
+                return result.signature;
+            }
+            throw new Error('钱包未返回交易签名');
+        },
+        async signAndSendStandard(provider, transaction, options = {}) {
+            const account = this.account || provider.accounts?.[0];
+            if (!account) {
+                throw new Error('钱包未授权任何账户');
+            }
+            const chain = getAccountChain(account);
+            const serialized = transaction.serialize();
+            const feature = provider.features?.[SOLANA_SIGN_AND_SEND_FEATURE];
+            if (feature?.signAndSendTransaction) {
+                const [output] = await feature.signAndSendTransaction({
+                    account,
+                    chain,
+                    transaction: serialized,
+                    options: buildStandardSendOptions(options)
+                });
+                if (!output?.signature) {
+                    throw new Error('钱包未返回交易签名');
+                }
+                const bs58 = await getBs58Encoder();
+                return bs58.encode(output.signature);
+            }
+            const signFeature = provider.features?.[SOLANA_SIGN_TRANSACTION_FEATURE];
+            if (!signFeature?.signTransaction) {
+                throw new Error('钱包不支持签名交易');
+            }
+            const [signed] = await signFeature.signTransaction({
+                account,
+                chain,
+                transaction: serialized,
+                options: buildStandardSignOptions(options)
+            });
+            if (!signed?.signedTransaction) {
+                throw new Error('钱包未返回签名结果');
+            }
+            const connection = new solanaWeb3.Connection(SOLANA_RPC, {
+                commitment: options.commitment || 'confirmed',
+                fetch: gmFetch
+            });
+            return connection.sendRawTransaction(signed.signedTransaction, {
+                skipPreflight: options.skipPreflight,
+                maxRetries: options.maxRetries,
+                preflightCommitment: options.preflightCommitment,
+                minContextSlot: options.minContextSlot
+            });
+        }
+    };
+
+    async function ensureWalletConnection(options = {}) {
+        try {
+            await walletSession.connect(options);
+            return true;
+        } catch (err) {
+            if (options?.silent) {
+                console.debug('静默连接钱包失败:', err);
+                return false;
+            }
+            throw err;
+        }
+    }
+
+    function getConnectedWalletAddress() {
+        return walletSession.getAddress();
+    }
+
+    function isWalletAlreadyConnected() {
+        return walletSession.isConnected();
+    }
+
+    async function walletSignAndSendTransaction(transaction, options = {}) {
+        return walletSession.signAndSend(transaction, options);
+    }
+
     function isSolAddress(addr) {
         return typeof addr === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr.trim());
     }
@@ -1395,7 +1848,7 @@
         }
 
         // 尝试静默连接，已授权用户避免重复弹窗
-        await ensurePhantomConnected();
+        await ensureWalletConnection({ silent: true });
 
         document.getElementById('tip-username').textContent = username;
         
@@ -1537,21 +1990,11 @@
         showMessage('正在处理交易...', 'info');
 
         try {
-            // 检查Phantom钱包
-            if (!window.solana || !window.solana.isPhantom) {
-                throw new Error('请先安装 Phantom 钱包');
+            const connected = await ensureWalletConnection();
+            if (!connected) {
+                throw new Error('请先连接支持 Wallet Standard 的 Solana 钱包');
             }
-
-            // 连接钱包（已连接则跳过授权弹窗）
-            if (!window.solana.isConnected) {
-                try {
-                    await window.solana.connect();
-                } catch (connErr) {
-                    const reason = connErr?.message || connErr?.code || 'Phantom 连接被拒绝';
-                    throw new Error(`Phantom 连接失败：${reason}`);
-                }
-            }
-            const fromAddress = window.solana.publicKey?.toString();
+            const fromAddress = getConnectedWalletAddress();
             if (!fromAddress) {
                 throw new Error('未获取到钱包地址');
             }
@@ -1568,7 +2011,7 @@
             const transaction = await buildTransaction(fromAddress, address, amount, mintAddress);
             
             // 发送交易
-            const { signature } = await window.solana.signAndSendTransaction(transaction);
+            const signature = await walletSignAndSendTransaction(transaction);
             
             showMessage('交易已发送，等待确认...', 'info');
 
@@ -1771,7 +2214,7 @@
                     </div>
                 </div>
                 <div class="dm-foot">
-                    <div class="dm-status" id="dm-status">Phantom 将弹出确认支付 1 $V2EX</div>
+                    <div class="dm-status" id="dm-status">钱包将弹出确认支付 1 $V2EX</div>
                     <div class="dm-actions">
                         <button class="dm-btn-ghost" id="dm-cancel">取消</button>
                         <button class="dm-btn-primary" id="dm-send">发送私信</button>
@@ -1793,7 +2236,7 @@
         const targetEl = dmModalEl.querySelector('#dm-target');
         targetEl.textContent = `@${username}`;
         const statusEl = dmModalEl.querySelector('#dm-status');
-        statusEl.textContent = 'Phantom 将弹出确认支付 1 $V2EX';
+        statusEl.textContent = '钱包将弹出确认支付 1 $V2EX';
         const sendBtn = dmModalEl.querySelector('#dm-send');
         const contentEl = dmModalEl.querySelector('#dm-content');
         sendBtn.disabled = false;
@@ -1822,22 +2265,21 @@
         };
         reportStatus('准备钱包...');
         await ensureSolanaLibraries();
-        if (!window.solana || !window.solana.isPhantom) {
-            throw new Error('请安装并解锁 Phantom 钱包');
-        }
-        await ensurePhantomConnected();
-        if (!window.solana.isConnected) {
+        if (!isWalletAlreadyConnected()) {
             reportStatus('连接钱包...');
-            await window.solana.connect();
         }
-        const from = window.solana.publicKey?.toString();
+        const connected = await ensureWalletConnection();
+        if (!connected) {
+            throw new Error('请安装并解锁支持 Wallet Standard 的 Solana 钱包');
+        }
+        const from = getConnectedWalletAddress();
         if (!from) {
             throw new Error('未获取到钱包地址');
         }
         reportStatus('构建交易...');
         const tx = await buildTransaction(from, normalizedAddress, MESSAGE_COST, V2EX_MINT);
         reportStatus('等待钱包签名...');
-        const { signature } = await window.solana.signAndSendTransaction(tx);
+        const signature = await walletSignAndSendTransaction(tx);
         reportStatus('链上确认中...');
         await waitForTransaction(signature);
         const memo = content.slice(0, 180);
@@ -1943,7 +2385,7 @@
             try {
                 const addr = await getUserAddress(username, { fallbackAddress });
                 if (!addr) throw new Error('对方未绑定 Solana 地址');
-                await ensurePhantomConnected();
+                await ensureWalletConnection({ silent: true });
                 openDmModal(username, addr);
             } catch (err) {
                 alert(err.message || '无法发送私信');
@@ -1979,7 +2421,7 @@
             try {
                 const addr = await getUserAddress(username, { fallbackAddress: address });
                 if (!addr) throw new Error('对方未绑定 Solana 地址');
-                await ensurePhantomConnected();
+                await ensureWalletConnection({ silent: true });
                 openDmModal(username, addr);
             } catch (err) {
                 alert(err.message || '无法发送私信');
@@ -4067,7 +4509,7 @@
             try {
                 const addr = await getUserAddress(username, { fallbackAddress });
                 if (!addr) throw new Error('对方未绑定 Solana 地址');
-                await ensurePhantomConnected();
+                await ensureWalletConnection({ silent: true });
                 openDmModal(username, addr);
             } catch (err) {
                 alert(err.message || '无法发送私信');
@@ -4337,7 +4779,7 @@
                     if (!username) throw new Error('未找到作者用户名');
                     const addr = await getUserAddress(username);
                     if (!addr) throw new Error('对方未绑定 Solana 地址');
-                    await ensurePhantomConnected();
+                    await ensureWalletConnection({ silent: true });
                     openDmModal(username, addr);
                 } catch (err) {
                     alert(err.message || '无法发送私信');
@@ -4352,40 +4794,19 @@
         });
     }
 
-    // 加载Solana Web3.js（简化版本，实际使用Phantom钱包API）
-    function loadSolanaLib() {
-        return new Promise((resolve) => {
-            // 检查Phantom是否可用
-            if (window.solana && window.solana.isPhantom) {
-                resolve();
-            } else {
-                // 等待Phantom加载
-                let attempts = 0;
-                const checkPhantom = setInterval(() => {
-                    attempts++;
-                    if (window.solana && window.solana.isPhantom) {
-                        clearInterval(checkPhantom);
-                        resolve();
-                    } else if (attempts > 20) {
-                        clearInterval(checkPhantom);
-                        console.warn('Phantom钱包未检测到');
-                        resolve();
-                    }
-                }, 500);
-            }
-        });
-    }
-
-    // 尝试静默连接 Phantom，若已授权则避免重复弹窗
-    async function ensurePhantomConnected() {
-        if (!window.solana || !window.solana.isPhantom) return false;
-        if (window.solana.isConnected) return true;
+    // 初始化钱包检测，等待注入完成
+    async function loadSolanaLib() {
         try {
-            await window.solana.connect({ onlyIfTrusted: true });
-            return window.solana.isConnected;
-        } catch (e) {
-            // 未授权时会拒绝，保持静默
-            return false;
+            const module = await ensureWalletAdapterBaseModule();
+            module.scopePollingDetectionStrategy(() => Boolean(
+                PAGE_WINDOW.navigator?.wallets ||
+                PAGE_WINDOW.solana ||
+                PAGE_WINDOW.phantom?.solana ||
+                PAGE_WINDOW.okxwallet ||
+                PAGE_WINDOW.bitgetwallet
+            ));
+        } catch (err) {
+            console.warn('钱包检测初始化失败:', err);
         }
     }
 
