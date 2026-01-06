@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         V2EX 打赏 + 私信
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.3.2
 // @description  为 V2EX 添加回复打赏（$V2EX / SOL）与 1 $V2EX 私信能力
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -4021,6 +4021,14 @@
         const newQuoteBtn = quoteBtn.cloneNode(true);
         tipBtn.parentNode.replaceChild(newTipBtn, tipBtn);
         quoteBtn.parentNode.replaceChild(newQuoteBtn, quoteBtn);
+        
+        // 检查是否是自己的消息，如果是则隐藏打赏选项
+        const isOutgoing = record.from === tipChatState.currentUser;
+        if (isOutgoing) {
+            newTipBtn.style.display = 'none';
+        } else {
+            newTipBtn.style.display = 'block';
+        }
         
         // 赞赏功能
         newTipBtn.onclick = async () => {
