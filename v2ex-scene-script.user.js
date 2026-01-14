@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         $V2EX Scence +
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  为 V2EX 增强场景化打赏、私信和聊天功能
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -82,8 +82,11 @@
     const TIP_CHAT_CHANGELOG_KEY = 'v2ex-tip-chat-changelog-version';
     const TIP_CHAT_DEFAULT_THEME = 'dark';
     const RESIZE_ICON_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/assets/resize.svg';
-    // 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
+// 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
     const SCRIPT_CHANGELOG_ENTRIES = {
+        '1.4.1': [
+            '新增按 Esc 键关闭聊天面板功能, 当聊天面板未固定时可以快速关闭面板'
+        ],
         '1.4.0': [
             '新增聊天面板拖动缩放与自适应布局能力,可以通过右下角的拖拽手柄调整大小',
             '新增主动发起会话功能, 输入用户名直接发起一个会话',
@@ -5511,6 +5514,16 @@
         if (meta.latestId) {
             refreshTipChatData({ forceFull: false }).catch(() => {});
         }
+        
+        // 添加 Esc 键关闭聊天面板功能
+        const handleEscapeKey = (event) => {
+            if (event.key === 'Escape' && isTipChatPanelOpen() && !tipChatState.pinned) {
+                toggleTipChatPanel(false);
+            }
+        };
+        document.addEventListener('keydown', handleEscapeKey);
+        // 存储事件监听器引用以便后续清理
+        tipChatState.escapeKeyHandler = handleEscapeKey;
     }
 
     function createInlineDmButton({ username, targetId, fallbackAddress }) {
