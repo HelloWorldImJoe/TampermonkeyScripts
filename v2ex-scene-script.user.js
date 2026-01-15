@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         $V2EX Scence +
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
+// @version      1.4.2
 // @description  为 V2EX 增强场景化打赏、私信和聊天功能
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
@@ -82,8 +82,11 @@
     const TIP_CHAT_CHANGELOG_KEY = 'v2ex-tip-chat-changelog-version';
     const TIP_CHAT_DEFAULT_THEME = 'dark';
     const RESIZE_ICON_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/assets/resize.svg';
-// 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
+    // 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
     const SCRIPT_CHANGELOG_ENTRIES = {
+        '1.4.2': [
+            '新增在会话消息旁展示消耗/获得代币数量功能, 绿色显示获得, 红色显示消耗'
+        ],
         '1.4.1': [
             '新增按 Esc 键关闭聊天面板功能, 当聊天面板未固定时可以快速关闭面板'
         ],
@@ -1378,6 +1381,31 @@
             margin: 8px 0;
             border: none;
             border-top: 1px dashed var(--tip-chat-border);
+        }
+        .tip-chat-token-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+            margin-left: 6px;
+        }
+        .tip-chat-token-badge.spent {
+            background: rgba(239, 68, 68, 0.18);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+        .tip-chat-token-badge.earned {
+            background: rgba(22, 163, 74, 0.2);
+            color: #4ade80;
+            border: 1px solid rgba(22, 163, 74, 0.5);
+        }
+        .tip-chat-token-badge .token-symbol {
+            font-size: 10px;
+            opacity: 0.85;
         }
     `;
 
@@ -4640,6 +4668,15 @@
             timeSpan.textContent = formatAbsoluteTime(record.timestamp);
             meta.appendChild(nameSpan);
             meta.appendChild(timeSpan);
+
+            if (record.amount && Number.isFinite(record.amount)) {
+                const tokenLabel = record.token === 'sol' ? 'SOL' : '$V2EX';
+                const tokenBadge = document.createElement('span');
+                tokenBadge.className = `tip-chat-token-badge ${outgoing ? 'spent' : 'earned'}`;
+                const prefix = outgoing ? '-' : '+';
+                tokenBadge.innerHTML = `<span class="token-symbol">${tokenLabel}</span> ${prefix}${record.amount}`;
+                meta.appendChild(tokenBadge);
+            }
 
             const bubble = document.createElement('div');
             bubble.className = 'tip-chat-message-bubble';
