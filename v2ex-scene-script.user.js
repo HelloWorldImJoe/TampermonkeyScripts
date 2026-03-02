@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         $V2EX Scence +
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
+// @version      1.4.3
 // @description  为 V2EX 增强场景化打赏、私信和聊天功能
 // @author       JoeJoeJoe
 // @match        https://www.v2ex.com/*
 // @match        https://*.v2ex.com/*
+// @exclude      https://*.v2ex.com/signin/*
+// @exclude      https://*.v2ex.com/2fa/*
 // @icon         https://www.v2ex.com/static/icon-192.png
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -84,6 +86,9 @@
     const RESIZE_ICON_URL = 'https://raw.githubusercontent.com/HelloWorldImJoe/TampermonkeyScripts/master/assets/resize.svg';
     // 在此对象中维护版本号到更新说明的映射，新增版本请追加条目
     const SCRIPT_CHANGELOG_ENTRIES = {
+        '1.4.3': [
+            '过滤掉 *.v2ex.com/signin/* | 2fa 路径，避免在登录页面加载脚本引起问题'
+        ],
         '1.4.2': [
             '新增在会话消息旁展示消耗/获得代币数量功能, 绿色显示获得, 红色显示消耗'
         ],
