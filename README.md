@@ -12,6 +12,12 @@
 	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/v2ex-scene-script.user.js)
 	- 本仓库文件：`v2ex-scene-script.user.js`
 
+- **V2EX 自定义 Emoji**：为 V2EX 回复输入框增加 Emoji 按钮、分页表情面板和可配置的数据源设置，点击表情即可把图片 URL 插入输入框。
+	- 适用页面：`https://www.v2ex.com/t/*`，`https://*.v2ex.com/t/*`
+	- [脚本安装地址](https://github.com/HelloWorldImJoe/TampermonkeyScripts/raw/master/v2ex-custom-emoji.user.js)
+	- 本仓库文件：`v2ex-custom-emoji.user.js`
+	- 数据源格式：脚本会从 `{{Resource URL}}/emoji.json` 读取表情列表，图片地址为 `{{Resource URL}}/{表情图片文件名}`，可在面板右下角“设置”中切换来源
+
 - **快速感谢打赏者（已并入上方脚本）**：原独立脚本 `topic-quick-thank.user.js` 的功能已整合进 `v2ex-scene-script.user.js`，仍可用于本地 `target/topic.html` 测试。
 		- 使用方式：安装/更新 `v2ex-scene-script.user.js` 后，在话题打赏列表旁出现“感谢所有打赏者”“单独感谢”按钮；默认不自动提交，可切换按钮开启自动提交。
 		- 风险提示：自动提交可能误发，建议先保持关闭并人工检查内容。
