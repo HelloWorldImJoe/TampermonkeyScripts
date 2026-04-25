@@ -149,7 +149,7 @@
 
 		.v2ex-emoji-grid {
 			display: grid;
-			grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+			grid-template-columns: repeat(5, minmax(0, 1fr));
 			gap: 14px 12px;
 			align-content: start;
 			grid-auto-rows: max-content;
@@ -484,7 +484,7 @@
 			}
 
 			.v2ex-emoji-grid {
-				grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+				grid-template-columns: repeat(5, minmax(0, 1fr));
 			}
 		}
 
@@ -499,7 +499,7 @@
 			}
 
 			.v2ex-emoji-grid {
-				grid-template-columns: repeat(4, minmax(0, 1fr));
+				grid-template-columns: repeat(5, minmax(0, 1fr));
 				gap: 10px 8px;
 			}
 
@@ -626,12 +626,18 @@
 		nextButton.className = 'v2ex-emoji-secondary';
 		nextButton.textContent = '下一页';
 
+		const refreshButton = document.createElement('button');
+		refreshButton.type = 'button';
+		refreshButton.className = 'v2ex-emoji-secondary';
+		refreshButton.textContent = '刷新';
+
 		const footerStatus = document.createElement('div');
 		footerStatus.className = 'v2ex-emoji-status v2ex-emoji-footer-status';
 
 		pager.appendChild(prevButton);
 		pager.appendChild(pageIndicator);
 		pager.appendChild(nextButton);
+		pager.appendChild(refreshButton);
 
 		footer.appendChild(pager);
 		footer.appendChild(footerStatus);
@@ -724,6 +730,7 @@
 			pageIndicator,
 			prevButton,
 			nextButton,
+			refreshButton,
 			settings,
 			settingsButton,
 			aliasInput,
@@ -765,6 +772,11 @@
 				state.currentPage += 1;
 				renderAll();
 			}
+		});
+
+		refreshButton.addEventListener('click', async() => {
+			state.currentPage = 1;
+			await loadEmojiData(true);
 		});
 
 		settingsButton.addEventListener('click', () => {
@@ -831,6 +843,7 @@
 			instance.pageIndicator.textContent = `${state.currentPage} / ${state.totalPages}`;
 			instance.prevButton.disabled = state.currentPage <= 1 || state.loading;
 			instance.nextButton.disabled = state.currentPage >= state.totalPages || state.loading;
+			instance.refreshButton.disabled = state.loading || !isConfigurableSource(state.sourceUrl);
 			saveButton.textContent = state.editingSourceId ? '保存修改' : '新增源';
 
 			instance.status.classList.toggle('is-error', Boolean(state.error));
@@ -1119,7 +1132,7 @@
 			});
 		});
 
-		const pageSize = clampPageSize(payload.page_size);
+		const pageSize = DEFAULT_PAGE_SIZE;
 		const totalPages = Math.max(1, Math.ceil(emojiItems.length / pageSize));
 
 		return {
